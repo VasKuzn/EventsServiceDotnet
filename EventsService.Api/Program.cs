@@ -4,7 +4,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddOpenApi();
+builder.Services.AddSwaggerGen();
 builder.Services.AddAuthorization();
 
 builder.Services.AddApplicationServices();
@@ -20,7 +20,8 @@ if (app.Environment.IsDevelopment())
         options.ValidateOnBuild = true;
     });
 
-    app.MapOpenApi();
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
 app.UseHttpsRedirection();

@@ -15,8 +15,8 @@ namespace EventsService.Api.Extensions
 
         public static IServiceCollection AddInfrastructureServices(this IServiceCollection services)
         {
-            services.AddSingleton<List<Event>>(); //протестить
-            services.AddSingleton<IEventRepository, InMemoryEventRepository>();
+            services.AddSingleton<List<Event>>();
+            services.AddScoped<IEventRepository, InMemoryEventRepository>();
             return services;
         }
     }
