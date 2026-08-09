@@ -1,16 +1,42 @@
 namespace EventsService.Domain.Models
 {
-    public class Event
+    public sealed class Event
     {
-        public required Guid Id { get; set; }
+        public Guid Id { get; private set; }
 
-        public required string Title { get; set; }
+        public string Title { get; private set; }
 
-        public string? Description { get; set; }
+        public string? Description { get; private set; }
 
-        public required DateTime StartAt { get; set; }
+        public DateTime StartAt { get; private set; }
 
-        public required DateTime EndAt { get; set; }
+        public DateTime EndAt { get; private set; }
 
+        private Event(Guid id, string title, string? description, DateTime startAt, DateTime endAt)
+        {
+            Id = id;
+            Title = title;
+            Description = description;
+            StartAt = startAt;
+            EndAt = endAt;
+        }
+
+        public static Event Create(Guid id, string title, string? description, DateTime startAt, DateTime endAt)
+        {
+            ThrowIfNotValid(title, startAt, endAt);
+            return new Event(id, title, description, startAt, endAt);
+        }
+
+        private static void ThrowIfNotValid(string title, DateTime startAt, DateTime endAt)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                throw new ArgumentException("Title обязателен для заполнения", nameof(title));
+            }
+            if (endAt <= startAt)
+            {
+                throw new ArgumentException("EndAt должен быть позже StartAt", nameof(endAt));
+            }
+        }
     }
 }

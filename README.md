@@ -61,7 +61,7 @@ dotnet run --project EventsService.Api
 ### Валидация (POST / PUT)
 
 - `Title`, `StartAt`, `EndAt` обязательны.
-- `EndAt` должен быть позже `StartAt`.
+- `EndAt` должен быть позже `StartAt` и `StartAt` > текущее время.
 - Нарушение — `400 Bad Request` с деталями ошибок.
 
 ## Стек

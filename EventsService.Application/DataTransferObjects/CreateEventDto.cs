@@ -24,15 +24,14 @@ namespace EventsService.Application.DataTransferObjects
                     "EndAt должен быть позже StartAt",
                     new[] { nameof(EndAt) });
             }
+            if (StartAt < DateTime.UtcNow)
+            {
+                yield return new ValidationResult(
+                    "StartAt не может быть в прошлом",
+                    new[] { nameof(StartAt) });
+            }
         }
 
-        public Event ToEntity() => new()
-        {
-            Id = Guid.NewGuid(),
-            Title = Title,
-            Description = Description,
-            StartAt = StartAt,
-            EndAt = EndAt
-        };
+        public Event ToEntity() => Event.Create(Guid.NewGuid(), Title, Description, StartAt, EndAt);
     }
 }
