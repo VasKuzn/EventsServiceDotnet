@@ -1,4 +1,4 @@
-﻿namespace EventsSevice.Application;
+﻿namespace EventsService.Application;
 
 public class Class1
 {
