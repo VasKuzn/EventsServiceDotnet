@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using EventsService.Domain.Models;
 
 namespace EventsService.Application.DataTransferObjects
 {
@@ -24,5 +25,14 @@ namespace EventsService.Application.DataTransferObjects
                     new[] { nameof(EndAt) });
             }
         }
+
+        public Event ToEntity(Guid id) => new()
+        {
+            Id = id,
+            Title = Title,
+            Description = Description,
+            StartAt = StartAt,
+            EndAt = EndAt
+        };
     }
 }

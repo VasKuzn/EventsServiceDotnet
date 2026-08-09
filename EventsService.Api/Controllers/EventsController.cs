@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace EventsService.Api.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("events")]
     public class EventsController(IEventService eventService) : ControllerBase
     {
         public IEventService EventService { get; } = eventService;

@@ -1,6 +1,5 @@
 using EventsService.Application.DataTransferObjects;
 using EventsService.Application.Interfaces;
-using EventsService.Domain.Models;
 
 namespace EventsService.Application.Services
 {
@@ -8,17 +7,10 @@ namespace EventsService.Application.Services
     {
         public IEventRepository EventRepository { get; } = eventRepository;
 
-        public async Task<Event> CreateEventAsync(CreateEventDto eventModel, CancellationToken cancellationToken)
+        public async Task<EventResponseDto> CreateEventAsync(CreateEventDto eventModel, CancellationToken cancellationToken)
         {
-            var eventToCreate = new Event
-            {
-                Id = Guid.NewGuid(),
-                Title = eventModel.Title,
-                Description = eventModel.Description,
-                StartAt = eventModel.StartAt,
-                EndAt = eventModel.EndAt
-            };
-            return await EventRepository.CreateEventAsync(eventToCreate, cancellationToken);
+            var createdEvent = await EventRepository.CreateEventAsync(eventModel.ToEntity(), cancellationToken);
+            return EventResponseDto.FromEntity(createdEvent);
         }
 
         public async Task<bool> DeleteEventAsync(Guid id, CancellationToken cancellationToken)
@@ -26,27 +18,22 @@ namespace EventsService.Application.Services
             return await EventRepository.DeleteEventAsync(id, cancellationToken);
         }
 
-        public async Task<Event?> GetEventAsync(Guid id, CancellationToken cancellationToken)
+        public async Task<EventResponseDto?> GetEventAsync(Guid id, CancellationToken cancellationToken)
         {
-            return await EventRepository.GetEventAsync(id, cancellationToken);
+            var foundEvent = await EventRepository.GetEventAsync(id, cancellationToken);
+            return foundEvent is null ? null : EventResponseDto.FromEntity(foundEvent);
         }
 
-        public async Task<IReadOnlyList<Event>> GetEventsAsync(CancellationToken cancellationToken)
+        public async Task<IReadOnlyList<EventResponseDto>> GetEventsAsync(CancellationToken cancellationToken)
         {
-            return await EventRepository.GetEventsAsync(cancellationToken);
+            var events = await EventRepository.GetEventsAsync(cancellationToken);
+            return events.Select(EventResponseDto.FromEntity).ToList();
         }
 
-        public async Task<Event?> UpdateEventAsync(Guid id, UpdateEventDto eventModel, CancellationToken cancellationToken)
+        public async Task<EventResponseDto?> UpdateEventAsync(Guid id, UpdateEventDto eventModel, CancellationToken cancellationToken)
         {
-            var eventToUpdate = new Event
-            {
-                Id = id,
-                Title = eventModel.Title,
-                Description = eventModel.Description,
-                StartAt = eventModel.StartAt,
-                EndAt = eventModel.EndAt
-            };
-            return await EventRepository.UpdateEventAsync(eventToUpdate, cancellationToken);
+            var updatedEvent = await EventRepository.UpdateEventAsync(eventModel.ToEntity(id), cancellationToken);
+            return updatedEvent is null ? null : EventResponseDto.FromEntity(updatedEvent);
         }
     }
 }
