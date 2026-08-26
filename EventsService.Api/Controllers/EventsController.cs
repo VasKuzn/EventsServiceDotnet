@@ -9,9 +9,9 @@ namespace EventsService.Api.Controllers
     public sealed class EventsController(IEventService eventService) : ControllerBase
     {
         [HttpGet]
-        public async Task<IActionResult> GetAllEvents(string? title = null, DateTime? from = null, DateTime? to = null, CancellationToken cancellationToken = default)
+        public async Task<IActionResult> GetAllEvents(string? title = null, DateTime? from = null, DateTime? to = null, int page = 1, int pageSize = 10, CancellationToken cancellationToken = default)
         {
-            var events = await eventService.GetEventsAsync(title, from, to, cancellationToken);
+            var events = await eventService.GetEventsAsync(title, from, to, page, pageSize, cancellationToken);
             return Ok(events);
         }
         [HttpGet("{id}")]

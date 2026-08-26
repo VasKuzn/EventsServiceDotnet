@@ -25,7 +25,7 @@ namespace EventsService.Application.Services
             return foundEvent is null ? throw new NotFoundException($"Сущность с Id: {id} не найдена") : EventResponseDto.FromEntity(foundEvent);
         }
 
-        public async Task<IReadOnlyList<EventResponseDto>> GetEventsAsync(string? title = null, DateTime? from = null, DateTime? to = null, CancellationToken cancellationToken = default)
+        public async Task<PaginatedResult<EventResponseDto>> GetEventsAsync(string? title = null, DateTime? from = null, DateTime? to = null, int page = 1, int pageSize = 10, CancellationToken cancellationToken = default)
         {
             var events = await eventRepository.GetEventsAsync(cancellationToken);
 
@@ -41,10 +41,24 @@ namespace EventsService.Application.Services
             }
             if (to.HasValue)
             {
-                filteredEvents = filteredEvents.Where(e => e.StartAt <= to.Value);
+                filteredEvents = filteredEvents.Where(e => e.EndAt <= to.Value);
             }
 
-            return [.. filteredEvents.Select(EventResponseDto.FromEntity)];
+            var totalCount = filteredEvents.Count();
+
+            var pagedEvents = filteredEvents
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(EventResponseDto.FromEntity)
+                .ToList();
+
+            return new PaginatedResult<EventResponseDto>
+            {
+                Items = pagedEvents,
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize
+            };
         }
 
         public async Task<EventResponseDto?> UpdateEventAsync(Guid id, UpdateEventDto eventModel, CancellationToken cancellationToken)

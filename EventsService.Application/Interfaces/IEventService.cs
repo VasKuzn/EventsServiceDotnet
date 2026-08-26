@@ -5,7 +5,7 @@ namespace EventsService.Application.Interfaces
     public interface IEventService
     {
         public Task<EventResponseDto?> GetEventAsync(Guid id, CancellationToken cancellationToken);
-        public Task<IReadOnlyList<EventResponseDto>> GetEventsAsync(string? title, DateTime? from, DateTime? to, CancellationToken cancellationToken = default);
+        public Task<PaginatedResult<EventResponseDto>> GetEventsAsync(string? title, DateTime? from, DateTime? to, int page, int pageSize, CancellationToken cancellationToken = default);
         public Task<EventResponseDto> CreateEventAsync(CreateEventDto eventModel, CancellationToken cancellationToken);
         public Task<EventResponseDto?> UpdateEventAsync(Guid id, UpdateEventDto eventModel, CancellationToken cancellationToken);
         public Task<bool> DeleteEventAsync(Guid id, CancellationToken cancellationToken);
