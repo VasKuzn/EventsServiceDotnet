@@ -1,5 +1,6 @@
 using EventsService.Application.DataTransferObjects;
 using EventsService.Application.Interfaces;
+using EventsService.Domain.Models;
 using EventsService.Domain.SystemExceptions;
 
 namespace EventsService.Application.Services
@@ -24,10 +25,26 @@ namespace EventsService.Application.Services
             return foundEvent is null ? throw new NotFoundException($"Сущность с Id: {id} не найдена") : EventResponseDto.FromEntity(foundEvent);
         }
 
-        public async Task<IReadOnlyList<EventResponseDto>> GetEventsAsync(CancellationToken cancellationToken)
+        public async Task<IReadOnlyList<EventResponseDto>> GetEventsAsync(string? title = null, DateTime? from = null, DateTime? to = null, CancellationToken cancellationToken = default)
         {
             var events = await eventRepository.GetEventsAsync(cancellationToken);
-            return events.Select(EventResponseDto.FromEntity).ToList();
+
+            IEnumerable<Event> filteredEvents = events;
+
+            if (!string.IsNullOrWhiteSpace(title))
+            {
+                filteredEvents = filteredEvents.Where(e => e.Title.Contains(title, StringComparison.OrdinalIgnoreCase));
+            }
+            if (from.HasValue)
+            {
+                filteredEvents = filteredEvents.Where(e => e.StartAt >= from.Value);
+            }
+            if (to.HasValue)
+            {
+                filteredEvents = filteredEvents.Where(e => e.StartAt <= to.Value);
+            }
+
+            return [.. filteredEvents.Select(EventResponseDto.FromEntity)];
         }
 
         public async Task<EventResponseDto?> UpdateEventAsync(Guid id, UpdateEventDto eventModel, CancellationToken cancellationToken)
