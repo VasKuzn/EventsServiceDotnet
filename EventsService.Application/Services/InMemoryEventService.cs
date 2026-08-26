@@ -1,5 +1,6 @@
 using EventsService.Application.DataTransferObjects;
 using EventsService.Application.Interfaces;
+using EventsService.Domain.SystemExceptions;
 
 namespace EventsService.Application.Services
 {
@@ -13,13 +14,14 @@ namespace EventsService.Application.Services
 
         public async Task<bool> DeleteEventAsync(Guid id, CancellationToken cancellationToken)
         {
-            return await eventRepository.DeleteEventAsync(id, cancellationToken);
+            var deleted = await eventRepository.DeleteEventAsync(id, cancellationToken);
+            return deleted ? true : throw new NotFoundException($"Сущность с Id: {id} не найдена");
         }
 
         public async Task<EventResponseDto?> GetEventAsync(Guid id, CancellationToken cancellationToken)
         {
             var foundEvent = await eventRepository.GetEventAsync(id, cancellationToken);
-            return foundEvent is null ? null : EventResponseDto.FromEntity(foundEvent);
+            return foundEvent is null ? throw new NotFoundException($"Сущность с Id: {id} не найдена") : EventResponseDto.FromEntity(foundEvent);
         }
 
         public async Task<IReadOnlyList<EventResponseDto>> GetEventsAsync(CancellationToken cancellationToken)
@@ -31,7 +33,7 @@ namespace EventsService.Application.Services
         public async Task<EventResponseDto?> UpdateEventAsync(Guid id, UpdateEventDto eventModel, CancellationToken cancellationToken)
         {
             var updatedEvent = await eventRepository.UpdateEventAsync(eventModel.ToEntity(id), cancellationToken);
-            return updatedEvent is null ? null : EventResponseDto.FromEntity(updatedEvent);
+            return updatedEvent is null ? throw new NotFoundException($"Сущность с Id: {id} не найдена") : EventResponseDto.FromEntity(updatedEvent);
         }
     }
 }

@@ -1,3 +1,4 @@
+using EventsService.Api.Exceptions;
 using EventsService.Api.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -6,6 +7,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddAuthorization();
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
 builder.Services.AddApplicationServices();
@@ -21,7 +23,6 @@ if (builder.Environment.IsDevelopment())
 }
 
 var app = builder.Build();
-
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
