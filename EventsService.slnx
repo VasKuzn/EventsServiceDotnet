@@ -3,4 +3,5 @@
   <Project Path="EventsService.Application/EventsService.Application.csproj" />
   <Project Path="EventsService.Domain/EventsService.Domain.csproj" />
   <Project Path="EventsService.Infrastructure/EventsService.Infrastructure.csproj" />
+  <Project Path="EventsService.Tests/EventsService.Tests.csproj" />
 </Solution>

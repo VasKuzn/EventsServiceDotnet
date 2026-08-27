@@ -227,9 +227,10 @@ public class InMemoryEventServiceTests
 
         // Assert
         Assert.Equal(events.Count, result.TotalCount);
-        Assert.Equal(expectedIds.Count(), result.Items.Count);
         Assert.Equal(2, result.Page);
         Assert.Equal(2, result.PageSize);
+        Assert.Equal(expectedIds.Count(), result.ItemsCount);
+        Assert.Equal(expectedIds.Count(), result.Items.Count);
         Assert.Equal(expectedIds, result.Items.Select(i => i.Id));
 
         _eventRepositoryMock.Verify(
@@ -274,9 +275,10 @@ public class InMemoryEventServiceTests
 
         // Assert
         Assert.Equal(filteredEvents.Count, result.TotalCount);
-        Assert.Equal(expectedIds.Count(), result.Items.Count);
         Assert.Equal(2, result.Page);
         Assert.Equal(2, result.PageSize);
+        Assert.Equal(expectedIds.Count(), result.ItemsCount);
+        Assert.Equal(expectedIds.Count(), result.Items.Count);
         Assert.Equal(expectedIds, result.Items.Select(i => i.Id));
 
         _eventRepositoryMock.Verify(
@@ -545,6 +547,7 @@ public class InMemoryEventServiceTests
 
         // Assert
         Assert.Equal(0, result.TotalCount);
+        Assert.Equal(0, result.ItemsCount);
         Assert.Empty(result.Items);
     }
 
@@ -569,6 +572,7 @@ public class InMemoryEventServiceTests
 
         // Assert
         Assert.Equal(events.Count, result.TotalCount);
+        Assert.Equal(0, result.ItemsCount);
         Assert.Empty(result.Items);
     }
 }
