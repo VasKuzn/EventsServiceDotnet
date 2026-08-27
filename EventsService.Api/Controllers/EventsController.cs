@@ -9,19 +9,15 @@ namespace EventsService.Api.Controllers
     public sealed class EventsController(IEventService eventService) : ControllerBase
     {
         [HttpGet]
-        public async Task<IActionResult> GetAllEvents(CancellationToken cancellationToken)
+        public async Task<IActionResult> GetAllEvents(string? title = null, DateTime? from = null, DateTime? to = null, int page = 1, int pageSize = 10, CancellationToken cancellationToken = default)
         {
-            var events = await eventService.GetEventsAsync(cancellationToken);
+            var events = await eventService.GetEventsAsync(title, from, to, page, pageSize, cancellationToken);
             return Ok(events);
         }
         [HttpGet("{id}")]
         public async Task<IActionResult> GetEventById(Guid id, CancellationToken cancellationToken)
         {
             var eventToFind = await eventService.GetEventAsync(id, cancellationToken);
-            if (eventToFind == null)
-            {
-                return NotFound();
-            }
             return Ok(eventToFind);
         }
         [HttpPost]
@@ -34,20 +30,12 @@ namespace EventsService.Api.Controllers
         public async Task<IActionResult> UpdateEvent(Guid id, [FromBody] UpdateEventDto updatedEvent, CancellationToken cancellationToken)
         {
             var eventToUpdate = await eventService.UpdateEventAsync(id, updatedEvent, cancellationToken);
-            if (eventToUpdate == null)
-            {
-                return NotFound();
-            }
             return Ok(eventToUpdate);
         }
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteEvent(Guid id, CancellationToken cancellationToken)
         {
-            var deleted = await eventService.DeleteEventAsync(id, cancellationToken);
-            if (!deleted)
-            {
-                return NotFound();
-            }
+            await eventService.DeleteEventAsync(id, cancellationToken);
             return NoContent();
         }
     }

@@ -1,3 +1,5 @@
+using EventsService.Domain.SystemExceptions;
+
 namespace EventsService.Domain.Models
 {
     public sealed class Event
@@ -31,11 +33,11 @@ namespace EventsService.Domain.Models
         {
             if (string.IsNullOrWhiteSpace(title))
             {
-                throw new ArgumentException("Title обязателен для заполнения", nameof(title));
+                throw new ValidationException("Title обязателен для заполнения", nameof(title));
             }
             if (endAt <= startAt)
             {
-                throw new ArgumentException("EndAt должен быть позже StartAt", nameof(endAt));
+                throw new ValidationException("EndAt должен быть позже StartAt", nameof(endAt));
             }
         }
     }
