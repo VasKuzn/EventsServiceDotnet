@@ -1,4 +1,5 @@
-using EventsService.Application.Interfaces;
+using EventsService.Application.Interfaces.Events;
+using EventsService.Application.Interfaces.Bookings;
 using EventsService.Application.Services;
 using EventsService.Domain.Models;
 using EventsService.Infrastructure.Repositories;
@@ -16,7 +17,9 @@ namespace EventsService.Api.Extensions
         public static IServiceCollection AddInfrastructureServices(this IServiceCollection services)
         {
             services.AddSingleton<List<Event>>();
+            services.AddSingleton<List<Booking>>();
             services.AddSingleton<IEventRepository, InMemoryEventRepository>();
+            services.AddSingleton<IBookingRepository, InMemoryBookingRepository>();
             return services;
         }
     }

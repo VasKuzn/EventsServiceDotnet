@@ -1,6 +1,6 @@
 using EventsService.Application.DataTransferObjects;
 
-namespace EventsService.Application.Interfaces
+namespace EventsService.Application.Interfaces.Events
 {
     public interface IEventService
     {

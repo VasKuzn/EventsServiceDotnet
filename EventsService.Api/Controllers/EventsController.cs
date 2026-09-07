@@ -1,5 +1,5 @@
 using EventsService.Application.DataTransferObjects;
-using EventsService.Application.Interfaces;
+using EventsService.Application.Interfaces.Events;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EventsService.Api.Controllers
