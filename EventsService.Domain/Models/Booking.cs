@@ -24,22 +24,17 @@ namespace EventsService.Domain.Models
             ProcessedAt = processedat;
         }
 
-        public static Booking Create(Guid id, Guid eventId, BookingStatus status, DateTime createdAt, DateTime? processedat)
-        {
-            ThrowIfNotValid(createdAt, processedat);
-            return new Booking(id, eventId, status, createdAt, processedat);
-        }
-        public static Booking CreateNew(Guid eventId)
+        public static Booking Create(Guid eventId)
         {
             return new Booking(Guid.NewGuid(), eventId, BookingStatus.Pending, DateTime.UtcNow, null);
         }
-        private static void ThrowIfNotValid(DateTime createdAt, DateTime? processedat)
+
+        /*
+        public static Booking Create(Guid id, Guid eventId, BookingStatus status, DateTime createdAt, DateTime? processedat)
         {
-            if (processedat is not null && processedat <= createdAt)
-            {
-                throw new ValidationException("ProcessedAt должен быть позже CreatedAt", nameof(processedat));
-            }
+            return new Booking(id, eventId, status, createdAt, processedat);
         }
+        */
 
     }
 }

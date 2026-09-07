@@ -1,4 +1,4 @@
-using EventsService.Application.DataTransferObjects;
+using EventsService.Application.DataTransferObjects.Events;
 
 namespace EventsService.Application.Interfaces.Events
 {

@@ -1,6 +1,6 @@
 using EventsService.Domain.Models;
 
-namespace EventsService.Application.DataTransferObjects
+namespace EventsService.Application.DataTransferObjects.Events
 {
     public record EventResponseDto
     {

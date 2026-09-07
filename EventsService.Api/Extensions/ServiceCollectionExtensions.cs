@@ -11,6 +11,7 @@ namespace EventsService.Api.Extensions
         public static IServiceCollection AddApplicationServices(this IServiceCollection services)
         {
             services.AddScoped<IEventService, InMemoryEventService>();
+            services.AddScoped<IBookingService, InMemoryBookingService>();
             return services;
         }
 

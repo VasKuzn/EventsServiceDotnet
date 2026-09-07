@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using EventsService.Domain.Models;
 
-namespace EventsService.Application.DataTransferObjects
+namespace EventsService.Application.DataTransferObjects.Events
 {
     public record CreateEventDto : IValidatableObject
     {
