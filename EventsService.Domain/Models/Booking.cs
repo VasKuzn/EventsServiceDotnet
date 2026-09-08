@@ -1,5 +1,4 @@
 using EventsService.Domain.Enums;
-using EventsService.Domain.SystemExceptions;
 
 namespace EventsService.Domain.Models
 {
@@ -27,6 +26,24 @@ namespace EventsService.Domain.Models
         public static Booking Create(Guid eventId)
         {
             return new Booking(Guid.NewGuid(), eventId, BookingStatus.Pending, DateTime.UtcNow, null);
+        }
+
+        public void Confirm(DateTime processedAt)
+        {
+            if (Status != BookingStatus.Pending)
+                throw new InvalidOperationException($"Cannot confirm booking {Id} in status {Status}.");
+
+            Status = BookingStatus.Confirmed;
+            ProcessedAt = processedAt;
+        }
+
+        public void Reject(DateTime processedAt)
+        {
+            if (Status != BookingStatus.Pending)
+                throw new InvalidOperationException($"Cannot reject booking {Id} in status {Status}.");
+
+            Status = BookingStatus.Rejected;
+            ProcessedAt = processedAt;
         }
 
         /*

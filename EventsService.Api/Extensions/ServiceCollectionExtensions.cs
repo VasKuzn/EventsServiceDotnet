@@ -2,6 +2,7 @@ using EventsService.Application.Interfaces.Events;
 using EventsService.Application.Interfaces.Bookings;
 using EventsService.Application.Services;
 using EventsService.Domain.Models;
+using EventsService.Infrastructure.BackgroundServices;
 using EventsService.Infrastructure.Repositories;
 
 namespace EventsService.Api.Extensions
@@ -21,6 +22,7 @@ namespace EventsService.Api.Extensions
             services.AddSingleton<List<Booking>>();
             services.AddSingleton<IEventRepository, InMemoryEventRepository>();
             services.AddSingleton<IBookingRepository, InMemoryBookingRepository>();
+            services.AddHostedService<BookingProcessingBackgroundService>();
             return services;
         }
     }

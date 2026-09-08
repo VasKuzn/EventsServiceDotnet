@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using EventsService.Application.Interfaces.Bookings;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,7 +13,7 @@ namespace EventsService.Api.Controllers
             var eventToFind = await bookingService.GetBookingByIdAsync(bookingId, cancellationToken);
             return Ok(eventToFind);
         }
-        [HttpPost]
+        [HttpPost("/events/{eventId}/book")]
         public async Task<IActionResult> CreateBooking(Guid eventId, CancellationToken cancellationToken)
         {
             var booking = await bookingService.CreateBookingAsync(eventId, cancellationToken);
