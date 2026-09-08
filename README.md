@@ -92,6 +92,78 @@ dotnet run --project EventsService.Api
 - `EndAt` должен быть позже `StartAt` и `StartAt` > текущее время.
 - Нарушение - `400 Bad Request` с деталями ошибок.
 
+## Бронирования (Bookings)
+
+Бронь создаётся так: `POST` мгновенно создаёт бронь в статусе `Pending` и возвращает `202 Accepted`, а фактическая обработка выполняется асинхронно фоновым сервисом.
+
+| Метод | Путь                | Описание                      | Успех | Не найдено |
+| ----- | ------------------- | ----------------------------- | ----- | ---------- |
+| POST  | `/events/{id}/book` | Создать бронь для события     | 202   | 404        |
+| GET   | `/bookings/{id}`    | Получить текущий статус брони | 200   | 404        |
+
+`POST /events/{id}/book`:
+
+- если события с `id` не существует - `404`;
+- бронь создаётся сразу в статусе `Pending`;
+- в теле ответа - `BookingResponseDto` созданной брони;
+- в заголовке `Location` - ссылка на ресурс брони: `/bookings/{bookingId}`.
+
+### Модель Booking / BookingResponseDto
+
+| Поле        | Тип           | Обязательное                                |
+| ----------- | ------------- | ------------------------------------------- |
+| Id          | Guid          | генерируется сервером                       |
+| EventId     | Guid          | да - Id события, к которому относится бронь |
+| Status      | BookingStatus | да, по умолчанию `Pending`                  |
+| CreatedAt   | DateTime      | да, проставляется при создании              |
+| ProcessedAt | DateTime?     | заполняется после фоновой обработки         |
+
+### Статусы (`BookingStatus`)
+
+| Статус      | Значение | Описание                                         |
+| ----------- | -------- | ------------------------------------------------ |
+| `Pending`   | 0        | бронь создана, ожидает фоновой обработки         |
+| `Confirmed` | 1        | бронь подтверждена (обработка прошла без ошибок) |
+| `Rejected`  | 2        | бронь отклонена (при обработке возникла ошибка)  |
+
+Данные о бронированиях хранятся в памяти приложения, аналогично событиям (`EventsService.Infrastructure/Repositories/InMemoryBookingRepository`).
+
+### Фоновая обработка (`BookingProcessingBackgroundService`)
+
+Реализована как `BackgroundService` (`EventsService.Infrastructure/BackgroundServices`), зарегистрирована в DI через `AddHostedService`:
+
+- раз в 10 секунд опрашивает хранилище броней и выбирает все брони в статусе `Pending`;
+- для каждой найденной брони имитирует обращение к внешней системе через `Task.Delay(2s)`;
+- если имитация завершилась без ошибок - бронь переводится в `Confirmed`, если во время обработки возникло исключение - в `Rejected`;
+- в обоих случаях заполняется `ProcessedAt` и обновлённая бронь сохраняется в хранилище;
+- корректно обрабатывает отмену (`CancellationToken`) при остановке хоста и ошибки на уровне отдельной брони/итерации, не прерывая работу сервиса;
+- ход обработки логируется через `ILogger<BookingProcessingBackgroundService>`.
+
+### Пример сценария использования
+
+```bash
+# 1. Создать событие
+curl -X POST http://localhost:5000/events \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Конференция .NET","startAt":"2026-12-01T10:00:00Z","endAt":"2026-12-01T12:00:00Z"}'
+# -> 201 Created, тело содержит "id" события
+
+# 2. Забронировать место на событии
+curl -i -X POST http://localhost:5000/events/{eventId}/book
+# -> 202 Accepted
+# -> Location: /bookings/{bookingId}
+# -> тело: {"id":"...","eventId":"...","status":0 (Pending),"createdAt":"...","processedAt":null}
+
+# 3. Сразу проверить статус - бронь ещё не обработана
+curl http://localhost:5000/bookings/{bookingId}
+# -> status: 0 (Pending), processedAt: null
+
+# 4. Подождать несколько секунд (фоновый сервис опрашивает раз в 10с + 2с имитация обработки)
+sleep 12
+curl http://localhost:5000/bookings/{bookingId}
+# -> status: 1 (Confirmed) или 2 (Rejected), processedAt заполнен
+```
+
 ## Формат ответа при ошибках
 
 Все ошибки обрабатываются глобальным `GlobalExceptionHandler` (`EventsService.Api/Exceptions`) и возвращаются в формате **RFC ProblemDetails** (`application/problem+json`):
@@ -140,7 +212,10 @@ dotnet run --project EventsService.Api
 
 ## Тесты
 
-Юнит-тесты (xUnit + Moq) для `EventsService` находятся в проекте `EventsService.Tests` и покрывают `InMemoryEventService`: успешные и неуспешные сценарии CRUD, фильтрацию, пагинацию и граничные случаи.
+Юнит-тесты (xUnit + Moq) находятся в проекте `EventsService.Tests`:
+
+- `InMemoryEventServiceTests` - покрывает `InMemoryEventService`: успешные и неуспешные сценарии CRUD, фильтрацию, пагинацию и граничные случаи;
+- `InMemoryBookingServiceTests` - покрывает `InMemoryBookingService`: создание брони для существующего/несуществующего/удалённого события, уникальность Id при нескольких бронях на одно событие, получение брони по Id (включая отражение смены статуса после `Confirm`/`Reject`) и получение по несуществующему Id.
 
 Запуск всех тестов (из папки `EventsService`):
 
