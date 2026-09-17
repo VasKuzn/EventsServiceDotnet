@@ -17,8 +17,6 @@ namespace EventsService.Api.Controllers
         public async Task<IActionResult> CreateBooking(Guid eventId, CancellationToken cancellationToken)
         {
             var booking = await bookingService.CreateBookingAsync(eventId, cancellationToken);
-            if (booking is null)
-                return NotFound();
 
             return AcceptedAtAction(
                 nameof(GetBookingById),
