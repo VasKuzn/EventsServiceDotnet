@@ -8,14 +8,26 @@ namespace EventsService.Application.Services
 {
     public sealed class InMemoryBookingService(IBookingRepository bookingRepository, IEventRepository eventRepository) : IBookingService
     {
-        public async Task<BookingResponseDto> CreateBookingAsync(Guid eventId, CancellationToken ct)
+        private readonly object _bookingLock = new();
+
+        public Task<BookingResponseDto> CreateBookingAsync(Guid eventId, CancellationToken ct)
         {
-            _ = await eventRepository.GetEventAsync(eventId, ct)
-            ?? throw new NotFoundException($"Event with ID {eventId} not found.");
+            lock (_bookingLock)
+            {
+                var eventEntity = eventRepository.GetEventAsync(eventId, ct).GetAwaiter().GetResult()
+                    ?? throw new NotFoundException($"Event with ID {eventId} not found.");
 
-            var response = await bookingRepository.CreateBookingAsync(Booking.Create(eventId), ct);
+                if (!eventEntity.TryReserveSeats())
+                {
+                    throw new NoAvailableSeatsException();
+                }
 
-            return BookingResponseDto.FromEntity(response);
+                eventRepository.UpdateEventAsync(eventEntity, ct).GetAwaiter().GetResult();
+
+                var response = bookingRepository.CreateBookingAsync(Booking.Create(eventId), ct).GetAwaiter().GetResult();
+
+                return Task.FromResult(BookingResponseDto.FromEntity(response));
+            }
         }
 
         public async Task<BookingResponseDto> GetBookingByIdAsync(Guid bookingId, CancellationToken ct)
