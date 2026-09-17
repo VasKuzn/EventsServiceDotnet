@@ -1,5 +1,5 @@
-using EventsService.Application.DataTransferObjects;
-using EventsService.Application.Interfaces;
+using EventsService.Application.DataTransferObjects.Events;
+using EventsService.Application.Interfaces.Events;
 using EventsService.Domain.Models;
 using EventsService.Domain.SystemExceptions;
 

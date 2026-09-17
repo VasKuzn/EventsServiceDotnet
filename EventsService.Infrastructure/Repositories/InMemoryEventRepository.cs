@@ -1,4 +1,4 @@
-using EventsService.Application.Interfaces;
+using EventsService.Application.Interfaces.Events;
 using EventsService.Domain.Models;
 
 namespace EventsService.Infrastructure.Repositories

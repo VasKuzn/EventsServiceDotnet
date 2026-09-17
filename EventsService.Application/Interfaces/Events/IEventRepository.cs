@@ -1,6 +1,6 @@
 using EventsService.Domain.Models;
 
-namespace EventsService.Application.Interfaces
+namespace EventsService.Application.Interfaces.Events
 {
     public interface IEventRepository
     {

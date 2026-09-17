@@ -1,4 +1,4 @@
-namespace EventsService.Application.DataTransferObjects
+namespace EventsService.Application.DataTransferObjects.Events
 {
     public sealed record PaginatedResult<T>
     {
