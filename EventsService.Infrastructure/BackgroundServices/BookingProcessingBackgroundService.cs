@@ -12,6 +12,9 @@ namespace EventsService.Infrastructure.BackgroundServices
         IEventRepository eventRepository,
         ILogger<BookingProcessingBackgroundService> logger) : BackgroundService
     {
+        private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(10);
+        private static readonly TimeSpan ProcessingDelay = TimeSpan.FromSeconds(2);
+
         private readonly SemaphoreSlim _processingSemaphore = new(1, 1);
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -35,7 +38,7 @@ namespace EventsService.Infrastructure.BackgroundServices
                     logger.LogError(ex, "Error while processing pending bookings");
                 }
 
-                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+                await Task.Delay(PollingInterval, stoppingToken);
             }
         }
 
@@ -47,7 +50,7 @@ namespace EventsService.Infrastructure.BackgroundServices
 
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+                await Task.Delay(ProcessingDelay, stoppingToken);
 
                 await _processingSemaphore.WaitAsync(stoppingToken);
                 try
