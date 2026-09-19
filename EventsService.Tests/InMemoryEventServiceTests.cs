@@ -29,7 +29,8 @@ public class InMemoryEventServiceTests
             Title = "Конференция .NET",
             Description = "Ежегодная конференция по разработке ПО",
             StartAt = DateTime.UtcNow.AddDays(1),
-            EndAt = DateTime.UtcNow.AddDays(2)
+            EndAt = DateTime.UtcNow.AddDays(2),
+            TotalSeats = 100
         };
 
         _eventRepositoryMock
@@ -63,7 +64,7 @@ public class InMemoryEventServiceTests
             "Конференция .NET",
             "Ежегодная конференция по разработке ПО",
             DateTime.UtcNow.AddDays(1),
-            DateTime.UtcNow.AddDays(2));
+            DateTime.UtcNow.AddDays(2), 100);
 
         _eventRepositoryMock
             .Setup(r => r.GetEventAsync(eventId, It.IsAny<CancellationToken>()))
@@ -92,11 +93,11 @@ public class InMemoryEventServiceTests
         var events = new List<Event>
         {
             Event.Create(Guid.NewGuid(), "Конференция .NET", "Описание 1",
-                DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2)),
+                DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2), 100),
             Event.Create(Guid.NewGuid(), "Митап по C#", "Описание 2",
-                DateTime.UtcNow.AddDays(3), DateTime.UtcNow.AddDays(4)),
+                DateTime.UtcNow.AddDays(3), DateTime.UtcNow.AddDays(4), 100),
             Event.Create(Guid.NewGuid(), "Воркшоп по Docker", "Описание 3",
-                DateTime.UtcNow.AddDays(5), DateTime.UtcNow.AddDays(6))
+                DateTime.UtcNow.AddDays(5), DateTime.UtcNow.AddDays(6), 100)
         };
 
         _eventRepositoryMock
@@ -126,11 +127,11 @@ public class InMemoryEventServiceTests
         var events = new List<Event>
         {
             Event.Create(Guid.NewGuid(), "Конференция .NET", "Описание 1",
-                DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2)),
+                DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2), 100),
             Event.Create(Guid.NewGuid(), "Митап по .NET", "Описание 2",
-                DateTime.UtcNow.AddDays(3), DateTime.UtcNow.AddDays(4)),
+                DateTime.UtcNow.AddDays(3), DateTime.UtcNow.AddDays(4), 100),
             Event.Create(Guid.NewGuid(), "Воркшоп по Docker", "Описание 3",
-                DateTime.UtcNow.AddDays(5), DateTime.UtcNow.AddDays(6))
+                DateTime.UtcNow.AddDays(5), DateTime.UtcNow.AddDays(6), 100)
         };
 
         var expectedIds = events
@@ -168,11 +169,11 @@ public class InMemoryEventServiceTests
         var events = new List<Event>
         {
             Event.Create(Guid.NewGuid(), "Конференция .NET", "Описание 1",
-                fromDate, DateTime.UtcNow.AddDays(2)),
+                fromDate, DateTime.UtcNow.AddDays(2), 100),
             Event.Create(Guid.NewGuid(), "Митап по .NET", "Описание 2",
-                DateTime.UtcNow.AddDays(3), toDate),
+                DateTime.UtcNow.AddDays(3), toDate, 100),
             Event.Create(Guid.NewGuid(), "Воркшоп по Docker", "Описание 3",
-                DateTime.UtcNow.AddDays(5), DateTime.UtcNow.AddDays(6))
+                DateTime.UtcNow.AddDays(5), DateTime.UtcNow.AddDays(6), 100)
         };
 
         var expectedIds = events
@@ -206,11 +207,11 @@ public class InMemoryEventServiceTests
         var events = new List<Event>
         {
             Event.Create(Guid.NewGuid(), "Конференция .NET", "Описание 1",
-                DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2)),
+                DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2), 100),
             Event.Create(Guid.NewGuid(), "Митап по .NET", "Описание 2",
-                DateTime.UtcNow.AddDays(3), DateTime.UtcNow.AddDays(4)),
+                DateTime.UtcNow.AddDays(3), DateTime.UtcNow.AddDays(4), 100),
             Event.Create(Guid.NewGuid(), "Воркшоп по Docker", "Описание 3",
-                DateTime.UtcNow.AddDays(5), DateTime.UtcNow.AddDays(6))
+                DateTime.UtcNow.AddDays(5), DateTime.UtcNow.AddDays(6), 100)
         };
 
         var expectedIds = events.Skip(1 * 2).Take(2)
@@ -246,13 +247,13 @@ public class InMemoryEventServiceTests
         var events = new List<Event>
         {
             Event.Create(Guid.NewGuid(), "Конференция .NET", "Описание 1",
-                DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2)),
+                DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2), 100),
             Event.Create(Guid.NewGuid(), "Митап по .NET", "Описание 2",
-                DateTime.UtcNow.AddDays(3), DateTime.UtcNow.AddDays(4)),
+                DateTime.UtcNow.AddDays(3), DateTime.UtcNow.AddDays(4), 100),
             Event.Create(Guid.NewGuid(), "Воркшоп по Docker", "Описание 3",
-                fromDate, toDate),
+                fromDate, toDate, 100),
             Event.Create(Guid.NewGuid(), "Технический сбор по CI/CD", "Описание 4",
-                DateTime.UtcNow.AddDays(7), DateTime.UtcNow.AddDays(8))
+                DateTime.UtcNow.AddDays(7), DateTime.UtcNow.AddDays(8), 100)
         };
 
         var filteredEvents = events
@@ -295,7 +296,8 @@ public class InMemoryEventServiceTests
             Title = "Обновлённая конференция .NET",
             Description = "Обновлённое описание",
             StartAt = DateTime.UtcNow.AddDays(3),
-            EndAt = DateTime.UtcNow.AddDays(4)
+            EndAt = DateTime.UtcNow.AddDays(4),
+            TotalSeats = 100
         };
 
         var updatedEvent = updateDto.ToEntity(eventId);
@@ -370,7 +372,8 @@ public class InMemoryEventServiceTests
             Title = "Событие",
             Description = "Описание",
             StartAt = DateTime.UtcNow.AddDays(1),
-            EndAt = DateTime.UtcNow.AddDays(2)
+            EndAt = DateTime.UtcNow.AddDays(2),
+            TotalSeats = 100
         };
 
         _eventRepositoryMock
@@ -416,7 +419,8 @@ public class InMemoryEventServiceTests
             Title = blankTitle,
             Description = "Описание",
             StartAt = DateTime.UtcNow.AddDays(1),
-            EndAt = DateTime.UtcNow.AddDays(2)
+            EndAt = DateTime.UtcNow.AddDays(2),
+            TotalSeats = 100
         };
 
         // Act & Assert
@@ -440,7 +444,8 @@ public class InMemoryEventServiceTests
             Title = "Конференция .NET",
             Description = "Описание",
             StartAt = startAt,
-            EndAt = startAt.AddHours(endOffsetHours)
+            EndAt = startAt.AddHours(endOffsetHours),
+            TotalSeats = 100
         };
 
         // Act & Assert
@@ -465,7 +470,8 @@ public class InMemoryEventServiceTests
             Title = "Обновлённая конференция .NET",
             Description = "Описание",
             StartAt = startAt,
-            EndAt = startAt.AddHours(endOffsetHours)
+            EndAt = startAt.AddHours(endOffsetHours),
+            TotalSeats = 100
         };
 
         // Act & Assert
@@ -486,9 +492,9 @@ public class InMemoryEventServiceTests
         var events = new List<Event>
         {
             Event.Create(Guid.NewGuid(), "Конференция .NET", "Описание 1",
-                DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2)),
+                DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2), 100),
             Event.Create(Guid.NewGuid(), "Митап по C#", "Описание 2",
-                DateTime.UtcNow.AddDays(3), DateTime.UtcNow.AddDays(4))
+                DateTime.UtcNow.AddDays(3), DateTime.UtcNow.AddDays(4), 100)
         };
 
         _eventRepositoryMock
@@ -512,9 +518,9 @@ public class InMemoryEventServiceTests
         var fromDate = DateTime.UtcNow.AddDays(1);
         var toDate = DateTime.UtcNow.AddDays(2);
 
-        var boundaryEvent = Event.Create(Guid.NewGuid(), "Граничное событие", null, fromDate, toDate);
+        var boundaryEvent = Event.Create(Guid.NewGuid(), "Граничное событие", null, fromDate, toDate, 100);
         var outsideEvent = Event.Create(Guid.NewGuid(), "Событие вне диапазона", null,
-            toDate.AddSeconds(1), toDate.AddDays(1));
+            toDate.AddSeconds(1), toDate.AddDays(1), 100);
 
         var events = new List<Event> { boundaryEvent, outsideEvent };
 
@@ -558,7 +564,7 @@ public class InMemoryEventServiceTests
         var events = new List<Event>
         {
             Event.Create(Guid.NewGuid(), "Единственное событие", null,
-                DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2))
+                DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2), 100)
         };
 
         _eventRepositoryMock

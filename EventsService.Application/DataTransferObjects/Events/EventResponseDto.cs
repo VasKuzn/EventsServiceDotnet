@@ -14,13 +14,19 @@ namespace EventsService.Application.DataTransferObjects.Events
 
         public required DateTime EndAt { get; init; }
 
+        public required int TotalSeats { get; init; }
+
+        public required int AvailableSeats { get; init; }
+
         public static EventResponseDto FromEntity(Event entity) => new()
         {
             Id = entity.Id,
             Title = entity.Title,
             Description = entity.Description,
             StartAt = entity.StartAt,
-            EndAt = entity.EndAt
+            EndAt = entity.EndAt,
+            TotalSeats = entity.TotalSeats,
+            AvailableSeats = entity.AvailableSeats
         };
     }
 }
