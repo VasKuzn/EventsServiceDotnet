@@ -46,6 +46,7 @@ namespace EventsService.Infrastructure.BackgroundServices
         {
             logger.LogInformation("Processing booking {BookingId}", booking.Id);
 
+            var semaphoreAcquired = false;
             Event? bookedEvent = null;
 
             try
@@ -53,33 +54,28 @@ namespace EventsService.Infrastructure.BackgroundServices
                 await Task.Delay(ProcessingDelay, stoppingToken);
 
                 await _processingSemaphore.WaitAsync(stoppingToken);
-                try
+                semaphoreAcquired = true;
+
+                bookedEvent = await eventRepository.GetEventAsync(booking.EventId, stoppingToken);
+                if (bookedEvent is null)
                 {
-                    bookedEvent = await eventRepository.GetEventAsync(booking.EventId, stoppingToken);
-                    if (bookedEvent is null)
-                    {
-                        booking.Reject(DateTime.UtcNow);
-                        await bookingRepository.UpdateBookingAsync(booking, stoppingToken);
-
-                        logger.LogWarning(
-                            "Event {EventId} for booking {BookingId} not found, booking rejected",
-                            booking.EventId,
-                            booking.Id);
-                        return;
-                    }
-
-                    booking.Confirm(DateTime.UtcNow);
+                    booking.Reject(DateTime.UtcNow);
                     await bookingRepository.UpdateBookingAsync(booking, stoppingToken);
 
-                    logger.LogInformation(
-                        "Booking {BookingId} processed with status {Status}",
-                        booking.Id,
-                        booking.Status);
+                    logger.LogWarning(
+                        "Event {EventId} for booking {BookingId} not found, booking rejected",
+                        booking.EventId,
+                        booking.Id);
+                    return;
                 }
-                finally
-                {
-                    _processingSemaphore.Release();
-                }
+
+                booking.Confirm(DateTime.UtcNow);
+                await bookingRepository.UpdateBookingAsync(booking, stoppingToken);
+
+                logger.LogInformation(
+                    "Booking {BookingId} processed with status {Status}",
+                    booking.Id,
+                    booking.Status);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -89,20 +85,19 @@ namespace EventsService.Infrastructure.BackgroundServices
             {
                 logger.LogError(ex, "Unexpected error while processing booking {BookingId}, rejecting", booking.Id);
 
-                await _processingSemaphore.WaitAsync(stoppingToken);
-                try
-                {
-                    booking.Reject(DateTime.UtcNow);
-                    await bookingRepository.UpdateBookingAsync(booking, stoppingToken);
+                booking.Reject(DateTime.UtcNow);
+                await bookingRepository.UpdateBookingAsync(booking, stoppingToken);
 
-                    bookedEvent ??= await eventRepository.GetEventAsync(booking.EventId, stoppingToken);
-                    if (bookedEvent is not null)
-                    {
-                        bookedEvent.ReleaseSeats();
-                        await eventRepository.UpdateEventAsync(bookedEvent, stoppingToken);
-                    }
+                bookedEvent ??= await eventRepository.GetEventAsync(booking.EventId, stoppingToken);
+                if (bookedEvent is not null)
+                {
+                    bookedEvent.ReleaseSeats();
+                    await eventRepository.UpdateEventAsync(bookedEvent, stoppingToken);
                 }
-                finally
+            }
+            finally
+            {
+                if (semaphoreAcquired)
                 {
                     _processingSemaphore.Release();
                 }
