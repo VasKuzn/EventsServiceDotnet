@@ -2,20 +2,21 @@ using EventsService.Application.Interfaces.Bookings;
 using EventsService.Application.Interfaces.Events;
 using EventsService.Domain.Enums;
 using EventsService.Domain.Models;
+using EventsService.Infrastructure.DataAccess;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace EventsService.Infrastructure.BackgroundServices
 {
     public class BookingProcessingBackgroundService(
-        IBookingRepository bookingRepository,
-        IEventRepository eventRepository,
+        IServiceScopeFactory scopeFactory,
         ILogger<BookingProcessingBackgroundService> logger) : BackgroundService
     {
         private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(10);
         private static readonly TimeSpan ProcessingDelay = TimeSpan.FromSeconds(2);
-
-        private readonly SemaphoreSlim _processingSemaphore = new(1, 1);
+        private const int MaxConcurrencyAttempts = 3;
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
@@ -23,10 +24,9 @@ namespace EventsService.Infrastructure.BackgroundServices
             {
                 try
                 {
-                    var bookings = await bookingRepository.GetBookingsAsync(stoppingToken);
-                    var pendingBookings = bookings.Where(b => b.Status == BookingStatus.Pending).ToList();
+                    var pendingBookingIds = await GetPendingBookingIdsAsync(stoppingToken);
 
-                    var tasks = pendingBookings.Select(booking => ProcessBookingAsync(booking, stoppingToken));
+                    var tasks = pendingBookingIds.Select(id => ProcessBookingAsync(id, stoppingToken));
                     await Task.WhenAll(tasks);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -42,19 +42,39 @@ namespace EventsService.Infrastructure.BackgroundServices
             }
         }
 
-        private async Task ProcessBookingAsync(Booking booking, CancellationToken stoppingToken)
+        private async Task<List<Guid>> GetPendingBookingIdsAsync(CancellationToken stoppingToken)
         {
-            logger.LogInformation("Processing booking {BookingId}", booking.Id);
+            using var scope = scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-            var semaphoreAcquired = false;
+            return await dbContext.Bookings
+                .AsNoTracking()
+                .Where(b => b.Status == BookingStatus.Pending)
+                .Select(b => b.Id)
+                .ToListAsync(stoppingToken);
+        }
+
+        private async Task ProcessBookingAsync(Guid bookingId, CancellationToken stoppingToken)
+        {
+            logger.LogInformation("Processing booking {BookingId}", bookingId);
+
+            using var scope = scopeFactory.CreateScope();
+            var bookingRepository = scope.ServiceProvider.GetRequiredService<IBookingRepository>();
+            var eventRepository = scope.ServiceProvider.GetRequiredService<IEventRepository>();
+
+            Booking? booking = null;
             Event? bookedEvent = null;
 
             try
             {
                 await Task.Delay(ProcessingDelay, stoppingToken);
 
-                await _processingSemaphore.WaitAsync(stoppingToken);
-                semaphoreAcquired = true;
+                booking = await bookingRepository.GetBookingAsync(bookingId, stoppingToken);
+                if (booking is null || booking.Status != BookingStatus.Pending)
+                {
+                    logger.LogWarning("Booking {BookingId} not found or already processed, skipping", bookingId);
+                    return;
+                }
 
                 bookedEvent = await eventRepository.GetEventAsync(booking.EventId, stoppingToken);
                 if (bookedEvent is null)
@@ -83,23 +103,46 @@ namespace EventsService.Infrastructure.BackgroundServices
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "Unexpected error while processing booking {BookingId}, rejecting", booking.Id);
+                logger.LogError(ex, "Unexpected error while processing booking {BookingId}, rejecting", bookingId);
+
+                if (booking is null)
+                {
+                    return;
+                }
 
                 booking.Reject(DateTime.UtcNow);
                 await bookingRepository.UpdateBookingAsync(booking, stoppingToken);
 
-                bookedEvent ??= await eventRepository.GetEventAsync(booking.EventId, stoppingToken);
-                if (bookedEvent is not null)
+                await ReleaseSeatsAsync(booking.EventId, stoppingToken);
+            }
+        }
+
+        private async Task ReleaseSeatsAsync(Guid eventId, CancellationToken stoppingToken)
+        {
+            for (var attempt = 1; attempt <= MaxConcurrencyAttempts; attempt++)
+            {
+                // Новый scope на каждую попытку: после конфликта контекст хранит устаревшую сущность.
+                using var scope = scopeFactory.CreateScope();
+                var eventRepository = scope.ServiceProvider.GetRequiredService<IEventRepository>();
+
+                var bookedEvent = await eventRepository.GetEventAsync(eventId, stoppingToken);
+                if (bookedEvent is null)
+                {
+                    return;
+                }
+
+                try
                 {
                     bookedEvent.ReleaseSeats();
                     await eventRepository.UpdateEventAsync(bookedEvent, stoppingToken);
+                    return;
                 }
-            }
-            finally
-            {
-                if (semaphoreAcquired)
+                catch (DbUpdateConcurrencyException) when (attempt < MaxConcurrencyAttempts)
                 {
-                    _processingSemaphore.Release();
+                    logger.LogWarning(
+                        "Concurrency conflict while releasing seats of event {EventId}, attempt {Attempt}",
+                        eventId,
+                        attempt);
                 }
             }
         }

@@ -6,9 +6,10 @@ using EventsService.Domain.SystemExceptions;
 
 namespace EventsService.Application.Services
 {
-    public sealed class InMemoryBookingService(IBookingRepository bookingRepository, IEventRepository eventRepository) : IBookingService
+    public sealed class BookingService(IBookingRepository bookingRepository, IEventRepository eventRepository) : IBookingService
     {
-        private readonly SemaphoreSlim _bookingSemaphore = new(1, 1);
+        // Сервис scoped, поэтому семафор должен быть общим для всех scope, иначе параллельные запросы его не разделят.
+        private static readonly SemaphoreSlim _bookingSemaphore = new(1, 1);
 
         public async Task<BookingResponseDto> CreateBookingAsync(Guid eventId, CancellationToken ct)
         {

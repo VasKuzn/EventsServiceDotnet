@@ -18,6 +18,8 @@ namespace EventsService.Domain.Models
 
         public int AvailableSeats { get; private set; }
 
+        public List<Booking> Bookings { get; private set; } = [];
+
         private Event(Guid id, string title, string? description, DateTime startAt, DateTime endAt, int totalSeats)
         {
             Id = id;
@@ -27,6 +29,10 @@ namespace EventsService.Domain.Models
             EndAt = endAt;
             TotalSeats = totalSeats;
             AvailableSeats = totalSeats;
+        }
+        private Event()
+        {
+            Title = null!;
         }
 
         public static Event Create(Guid id, string title, string? description, DateTime startAt, DateTime endAt, int totalSeats)
