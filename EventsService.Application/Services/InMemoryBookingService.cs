@@ -8,14 +8,31 @@ namespace EventsService.Application.Services
 {
     public sealed class InMemoryBookingService(IBookingRepository bookingRepository, IEventRepository eventRepository) : IBookingService
     {
+        private readonly SemaphoreSlim _bookingSemaphore = new(1, 1);
+
         public async Task<BookingResponseDto> CreateBookingAsync(Guid eventId, CancellationToken ct)
         {
-            _ = await eventRepository.GetEventAsync(eventId, ct)
-            ?? throw new NotFoundException($"Event with ID {eventId} not found.");
+            await _bookingSemaphore.WaitAsync(ct);
+            try
+            {
+                var eventEntity = await eventRepository.GetEventAsync(eventId, ct)
+                    ?? throw new NotFoundException($"Event with ID {eventId} not found.");
 
-            var response = await bookingRepository.CreateBookingAsync(Booking.Create(eventId), ct);
+                if (!eventEntity.TryReserveSeats())
+                {
+                    throw new NoAvailableSeatsException();
+                }
 
-            return BookingResponseDto.FromEntity(response);
+                await eventRepository.UpdateEventAsync(eventEntity, ct);
+
+                var response = await bookingRepository.CreateBookingAsync(Booking.Create(eventId), ct);
+
+                return BookingResponseDto.FromEntity(response);
+            }
+            finally
+            {
+                _bookingSemaphore.Release();
+            }
         }
 
         public async Task<BookingResponseDto> GetBookingByIdAsync(Guid bookingId, CancellationToken ct)

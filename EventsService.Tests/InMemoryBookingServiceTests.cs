@@ -23,7 +23,7 @@ public class InMemoryBookingServiceTests
 
     private static Event CreateExistingEvent(Guid eventId) =>
         Event.Create(eventId, "Конференция .NET", "Ежегодная конференция по разработке ПО",
-            DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2));
+            DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2), 100);
 
     [Fact]
     public async Task CreateBookingAsync_ExistingEvent_ReturnsPendingBooking()

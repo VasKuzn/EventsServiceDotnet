@@ -16,6 +16,9 @@ namespace EventsService.Application.DataTransferObjects.Events
         [Required(ErrorMessage = "Значение завершающего времени события обязательно для заполнения")]
         public required DateTime EndAt { get; init; }
 
+        [Required(ErrorMessage = "Значение общего количества мест события обязательно для заполнения")]
+        public int? TotalSeats { get; init; }
+
         public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
         {
             if (EndAt <= StartAt)
@@ -30,8 +33,14 @@ namespace EventsService.Application.DataTransferObjects.Events
                     "StartAt не может быть в прошлом",
                     new[] { nameof(StartAt) });
             }
+            if (TotalSeats is <= 0)
+            {
+                yield return new ValidationResult(
+                    "TotalSeats должен быть больше нуля",
+                    new[] { nameof(TotalSeats) });
+            }
         }
 
-        public Event ToEntity(Guid id) => Event.Create(id, Title, Description, StartAt, EndAt);
+        public Event ToEntity(Guid id) => Event.Create(id, Title, Description, StartAt, EndAt, TotalSeats.GetValueOrDefault());
     }
 }
