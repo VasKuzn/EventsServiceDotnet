@@ -14,6 +14,8 @@ namespace EventsService.Domain.Models
 
         public DateTime? ProcessedAt { get; private set; }
 
+        public Event Event { get; private set; } = null!;
+
         private Booking(Guid id, Guid eventId, BookingStatus status, DateTime createdAt, DateTime? processedat)
         {
             Id = id;
@@ -22,6 +24,7 @@ namespace EventsService.Domain.Models
             CreatedAt = createdAt;
             ProcessedAt = processedat;
         }
+        private Booking() { }
 
         public static Booking Create(Guid eventId)
         {
