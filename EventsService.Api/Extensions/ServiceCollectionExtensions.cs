@@ -3,6 +3,8 @@ using EventsService.Application.Interfaces.Bookings;
 using EventsService.Application.Services;
 using EventsService.Domain.Models;
 using EventsService.Infrastructure.BackgroundServices;
+using EventsService.Infrastructure.DataAccess;
+using Microsoft.EntityFrameworkCore;
 using EventsService.Infrastructure.Repositories;
 
 namespace EventsService.Api.Extensions
@@ -16,8 +18,10 @@ namespace EventsService.Api.Extensions
             return services;
         }
 
-        public static IServiceCollection AddInfrastructureServices(this IServiceCollection services)
+        public static IServiceCollection AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
         {
+            services.AddDbContext<AppDbContext>(options =>
+                options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
             services.AddScoped<IEventRepository, EventRepository>();
             services.AddScoped<IBookingRepository, BookingRepository>();
             services.AddHostedService<BookingProcessingBackgroundService>();
