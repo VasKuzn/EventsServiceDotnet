@@ -1,13 +1,16 @@
 # REST API для управления событиями
 
-Для запуска требуется .NET SDK 10 версии;
+Для запуска требуется:
+
+- .NET SDK 10 версии;
+- **PostgreSQL** - приложение хранит события и бронирования в PostgreSQL и без доступной базы не запустится.
 
 Проект представляет собой API для управления событиями.
 Архитектура - (Domain - Application - Infrastructure - API):
 
 - Domain содержит ядро приложения - неизменяемые сущности;
 - Application - бизнес-логика + контракты системы;
-- Infrastructure - связь с хранилищем данных и реализация CRUD-операций;
+- Infrastructure - связь с хранилищем данных (EF Core + PostgreSQL, `AppDbContext`) и реализация CRUD-операций;
 - API - точка входа в приложение, содержащая контроллеры, DI(стартовать приложение нужно именно отсюда).
 
 Связи проекта:
@@ -15,6 +18,30 @@
 API -> Application -> Domain;
 
 API -> Infrastructure -> Application -> Domain.
+
+## База данных (PostgreSQL)
+
+Строка подключения берётся из `ConnectionStrings:DefaultConnection` в `EventsService.Api/appsettings.json`:
+
+```json
+"ConnectionStrings": {
+  "DefaultConnection": "Host=localhost;Port=5432;Database=EventApi;Username=postgres;Password=postgres"
+}
+```
+
+Чтобы подключиться к своему серверу, измените значения `Host`, `Port`, `Database`, `Username` и `Password`. Значение можно переопределить, не меняя файл, через переменную окружения:
+
+```bash
+# bash
+export ConnectionStrings__DefaultConnection="Host=myhost;Port=5432;Database=EventApi;Username=user;Password=secret"
+```
+
+```powershell
+# PowerShell
+$env:ConnectionStrings__DefaultConnection = "Host=myhost;Port=5432;Database=EventApi;Username=user;Password=secret"
+```
+
+Схема БД создаётся автоматически при запуске приложения: в `Program.cs` после `builder.Build()` вызывается `db.Database.EnsureCreated()`. Метод создаёт базу данных и таблицы `Event` и `Booking`, если их ещё нет, а при повторных запусках ничего не делает. Миграции не используются: если схема сущностей изменится, существующую базу нужно удалить, чтобы `EnsureCreated` создал её заново.
 
 ## Запуск (в папке EventsService)
 
@@ -113,22 +140,19 @@ dotnet run --project EventsService.Api
 - в теле ответа - `BookingResponseDto` созданной брони;
 - в заголовке `Location` - ссылка на ресурс брони: `/bookings/{bookingId}`.
 
-### Защита от овербукинга (`InMemoryBookingService`)
+### Защита от овербукинга (`BookingService`)
 
-При параллельных запросах на одно и то же событие без синхронизации возможен overbooking. `InMemoryBookingService.CreateBookingAsync` оборачивает весь критический участок (`GetEventAsync` → `TryReserveSeats` → `UpdateEventAsync` → `CreateBookingAsync`) в `SemaphoreSlim(1, 1)`, гарантируя, что проверка доступности мест и их резервирование выполняются как единая атомарная операция - конкурентные запросы обрабатываются строго по очереди, и ни один из них не увидит "устаревшее" значение `AvailableSeats`.
+При параллельных запросах на одно и то же событие без синхронизации возможен overbooking: два запроса, каждый со своим `DbContext`, могут прочитать одно и то же значение `AvailableSeats` и оба его уменьшить. `BookingService.CreateBookingAsync` оборачивает весь критический участок (`GetEventAsync` → `TryReserveSeats` → `UpdateEventAsync` → `CreateBookingAsync`) в `SemaphoreSlim(1, 1)`, гарантируя, что проверка доступности мест и их резервирование выполняются как единая атомарная операция - конкурентные запросы обрабатываются строго по очереди, и ни один из них не увидит "устаревшее" значение `AvailableSeats`.
 
-Важная деталь про DI: `IBookingService` зарегистрирован как `Singleton` (`ServiceCollectionExtensions.AddApplicationServices`), а не `Scoped`. Если бы сервис был `Scoped`, на каждый HTTP-запрос создавался бы новый экземпляр `InMemoryBookingService` со своим собственным `SemaphoreSlim` - и семафоры разных запросов не защищали бы друг друга. `Singleton` здесь безопасен, так как обе зависимости сервиса (`IBookingRepository`, `IEventRepository`) сами `Singleton`.
+Важная деталь про DI: `IBookingService`, репозитории и `AppDbContext` зарегистрированы как `Scoped` - у каждого HTTP-запроса свой экземпляр сервиса и свой `DbContext`. Поэтому семафор в `BookingService` объявлен `static`: экземпляр семафора, привязанный к scope, не защищал бы запросы друг от друга. Такая защита работает в пределах одного процесса приложения; при запуске нескольких экземпляров сервиса понадобится блокировка или оптимистичная конкуренция на уровне БД.
 
 ### Примитивы синхронизации: какие и зачем
 
-В проекте используются два примитива - в разных местах, но с одной и той же ролью: обе критические секции полностью асинхронны (внутри есть `await` к репозиториям), поэтому в обоих случаях выбран `SemaphoreSlim`
+| Примитив                      | Где                                         | Что защищает                                                                                                                              |
+| ----------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `static SemaphoreSlim(1, 1)`  | `BookingService.CreateBookingAsync`         | Атомарность проверки `AvailableSeats` и создания брони при параллельных `POST /events/{id}/book` на одно событие - защита от overbooking. |
 
-| Примитив              | Где                                                      | Что защищает                                                                                                                                      |
-| --------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SemaphoreSlim(1, 1)` | `InMemoryBookingService.CreateBookingAsync`              | Атомарность проверки `AvailableSeats` и создания брони при параллельных `POST /events/{id}/book` на одно событие - защита от overbooking.         |
-| `SemaphoreSlim(1, 1)` | `BookingProcessingBackgroundService.ProcessBookingAsync` | Атомарность записи результата обработки (`Confirm`/`Reject` + обновление хранилищ) при параллельной обработке нескольких броней фоновым сервисом. |
-
-Оба семафора защищают консистентность записи в общие in-memory хранилища (`List<Event>`, `List<Booking>`) при параллельных обращениях, но это два разных семафора для двух независимых критических секций (создание брони на API-пути и её обработка в фоне) - они не блокируют друг друга.
+В `BookingProcessingBackgroundService` синхронизация не нужна: каждая бронь обрабатывается в своём scope со своим `DbContext`, а общих изменяемых объектов между задачами нет.
 
 ### Модель Booking / BookingResponseDto
 
@@ -148,16 +172,17 @@ dotnet run --project EventsService.Api
 | `Confirmed` | 1        | бронь подтверждена (обработка прошла без ошибок) |
 | `Rejected`  | 2        | бронь отклонена (при обработке возникла ошибка)  |
 
-Данные о бронированиях хранятся в памяти приложения, аналогично событиям (`EventsService.Infrastructure/Repositories/InMemoryBookingRepository`).
+Данные о бронированиях и событиях хранятся в PostgreSQL (таблицы `Booking` и `Event`) и сохраняются между перезапусками приложения (`EventsService.Infrastructure/Repositories/BookingRepository` и `EventRepository`).
 
 ### Фоновая обработка (`BookingProcessingBackgroundService`)
 
-Реализована как `BackgroundService` (`EventsService.Infrastructure/BackgroundServices`), зарегистрирована в DI через `AddHostedService`:
+Реализована как `BackgroundService` (`EventsService.Infrastructure/BackgroundServices`), зарегистрирована в DI через `AddHostedService`. Сервис - singleton, а `AppDbContext` и репозитории - scoped, поэтому напрямую их внедрить нельзя: сервис получает `IServiceScopeFactory` и создаёт scope сам:
 
-- раз в `PollingInterval` (10 секунд) опрашивает хранилище броней и выбирает все брони в статусе `Pending`;
-- все найденные брони обрабатываются параллельно - `ProcessBookingAsync` запускается для каждой брони отдельным `Task`, и итерация ждёт их завершения через `Task.WhenAll`;
+- раз в `PollingInterval` (10 секунд) создаёт scope, получает `AppDbContext`, выбирает из БД только идентификаторы броней в статусе `Pending` и закрывает scope;
+- все найденные брони обрабатываются параллельно - `ProcessBookingAsync(Guid bookingId)` запускается для каждой брони отдельным `Task`, и итерация ждёт их завершения через `Task.WhenAll`;
+- каждая задача создаёт собственный scope, а значит и собственный `DbContext`, и заново загружает бронь из БД; если бронь уже не `Pending` или удалена - она пропускается;
 - для каждой брони сначала имитируется обращение к внешней системе через `Task.Delay(ProcessingDelay)` (2 секунды) - так задержки разных броней выполняются параллельно, а не суммируются;
-- запись в хранилища защищена от гонок через `SemaphoreSlim(1, 1)`;
+- примитивы синхронизации не используются: у каждой задачи свой `DbContext`;
 - если к моменту обработки событие уже удалено - бронь переводится в `Rejected` и обработка завершается с логом `Warning`;
 - если событие найдено и обработка прошла без ошибок - бронь переводится в `Confirmed`;
 - если во время обработки возникло непредвиденное исключение - бронь переводится в `Rejected`, а занятое ею место возвращается в пул через `Event.ReleaseSeats()`;
@@ -215,7 +240,7 @@ wait
 
 # 3. Проверить итоговое количество мест
 curl -s http://localhost:5000/events/${eventId} | jq '.availableSeats'
-# -> 0 (ушли ровно 3 места, не меньше и не больше - lock в InMemoryBookingService не допустил overbooking)
+# -> 0 (ушли ровно 3 места, не меньше и не больше - семафор в BookingService не допустил overbooking)
 ```
 
 ## Формат ответа при ошибках
@@ -278,11 +303,11 @@ curl -s http://localhost:5000/events/${eventId} | jq '.availableSeats'
 
 ## Тесты
 
-Юнит-тесты (xUnit + Moq) находятся в проекте `EventsService.Tests`:
+Юнит-тесты (xUnit) находятся в проекте `EventsService.Tests`. Для тестов PostgreSQL не нужен: в них используется **InMemory-провайдер EF Core** (`UseInMemoryDatabase`). DI-контейнер настраивается через `ServiceCollection` (`TestServiceProvider`): регистрируются `AppDbContext`, реальные репозитории и сервисы. Имя InMemory-базы - `Guid.NewGuid()`, вынесенный в переменную, поэтому все scope одного теста работают с общей базой, а разные тесты друг на друга не влияют. Для параллельных запросов в тестах на конкурентность создаётся отдельный scope.
 
-- `InMemoryEventServiceTests` - покрывает `InMemoryEventService`: успешные и неуспешные сценарии CRUD, фильтрацию, пагинацию и граничные случаи;
-- `InMemoryBookingServiceTests` - покрывает `InMemoryBookingService` на моках репозиториев: создание брони для существующего/несуществующего/удалённого события, уникальность Id при нескольких бронях на одно событие, получение брони по Id (включая отражение смены статуса после `Confirm`/`Reject`) и получение по несуществующему Id;
-- `BookingSeatManagementTests` - покрывает логику мест и защиту от овербукинга поверх реальных `InMemoryEventRepository`/`InMemoryBookingRepository`:
+- `InMemoryEventServiceTests` - покрывает `EventService`: успешные и неуспешные сценарии CRUD, фильтрацию, пагинацию и граничные случаи;
+- `InMemoryBookingServiceTests` - покрывает `BookingService`: создание брони для существующего/несуществующего/удалённого события, уникальность Id при нескольких бронях на одно событие, получение брони по Id (включая отражение смены статуса после `Confirm`/`Reject`) и получение по несуществующему Id;
+- `BookingSeatManagementTests` - покрывает логику мест и защиту от овербукинга поверх реальных `EventRepository`/`BookingRepository` и `AppDbContext`:
   - уменьшение `AvailableSeats` после успешной брони, создание броней до исчерпания лимита с уникальными Id, `NoAvailableSeatsException` после исчерпания мест, `NotFoundException` для несуществующего события;
   - смена статуса брони через `Confirm()`/`Reject()` (статус + `ProcessedAt`), восстановление `AvailableSeats` и возможность новой брони после `Reject()` + `ReleaseSeats()`;
   - конкурентность: 20 параллельных запросов (`Task.Run` + `Task.WhenAll`, реальный параллелизм на пуле потоков) на событие с 5 местами - ровно 5 успехов и 15 `NoAvailableSeatsException`, `AvailableSeats == 0`; 10 параллельных запросов на событие с 10 местами - все 10 броней получают уникальные Id.
@@ -301,4 +326,4 @@ dotnet test
 
 ## Стек
 
-ASP.NET Core(.NET 10), Swashbuckle (Swagger UI), DI-контейнер встроенный в ASP.NET Core, xUnit + Moq.
+ASP.NET Core(.NET 10), Entity Framework Core + PostgreSQL (Npgsql), Swashbuckle (Swagger UI), DI-контейнер встроенный в ASP.NET Core, xUnit + EF Core InMemory (в тестах).

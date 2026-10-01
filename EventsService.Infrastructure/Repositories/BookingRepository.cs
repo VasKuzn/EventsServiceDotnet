@@ -18,13 +18,16 @@ namespace EventsService.Infrastructure.Repositories
 
         public async Task<bool> DeleteBookingAsync(Guid id, CancellationToken ct)
         {
-            var deleted = await dbContext.Bookings
-                .Where(e => e.Id == id)
-                .ExecuteDeleteAsync(ct);
+            var bookingEntity = await dbContext.Bookings.FindAsync([id], ct);
+            if (bookingEntity is null)
+            {
+                return false;
+            }
 
+            dbContext.Bookings.Remove(bookingEntity);
             await dbContext.SaveChangesAsync(ct);
 
-            return deleted > 0;
+            return true;
         }
 
         public async Task<Booking?> GetBookingAsync(Guid id, CancellationToken ct)

@@ -18,13 +18,16 @@ namespace EventsService.Infrastructure.Repositories
 
         public async Task<bool> DeleteEventAsync(Guid id, CancellationToken ct)
         {
-            var deleted = await dbContext.Events
-                .Where(e => e.Id == id)
-                .ExecuteDeleteAsync(ct);
+            var eventEntity = await dbContext.Events.FindAsync([id], ct);
+            if (eventEntity is null)
+            {
+                return false;
+            }
 
+            dbContext.Events.Remove(eventEntity);
             await dbContext.SaveChangesAsync(ct);
 
-            return deleted > 0;
+            return true;
         }
 
         public async Task<Event?> GetEventAsync(Guid id, CancellationToken ct)
@@ -39,11 +42,17 @@ namespace EventsService.Infrastructure.Repositories
 
         public async Task<Event?> UpdateEventAsync(Event eventEntity, CancellationToken ct)
         {
-            dbContext.Events.Update(eventEntity);
+            var existingEvent = await dbContext.Events.FindAsync([eventEntity.Id], ct);
+            if (existingEvent is null)
+            {
+                return null;
+            }
+
+            dbContext.Entry(existingEvent).CurrentValues.SetValues(eventEntity);
 
             await dbContext.SaveChangesAsync(ct);
 
-            return eventEntity;
+            return existingEvent;
         }
     }
 }
