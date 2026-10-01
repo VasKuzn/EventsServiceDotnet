@@ -6,7 +6,7 @@ using EventsService.Domain.SystemExceptions;
 
 namespace EventsService.Application.Services
 {
-    public sealed class InMemoryBookingService(IBookingRepository bookingRepository, IEventRepository eventRepository) : IBookingService
+    public sealed class BookingService(IBookingRepository bookingRepository, IEventRepository eventRepository) : IBookingService
     {
         private readonly SemaphoreSlim _bookingSemaphore = new(1, 1);
 

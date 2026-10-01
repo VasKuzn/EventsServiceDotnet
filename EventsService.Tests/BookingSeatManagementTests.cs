@@ -18,9 +18,9 @@ public class BookingSeatManagementTests
     {
         var events = new List<Event>();
         var bookings = new List<Booking>();
-        var eventRepository = new InMemoryEventRepository(events);
-        var bookingRepository = new InMemoryBookingRepository(bookings);
-        var bookingService = new InMemoryBookingService(bookingRepository, eventRepository);
+        var eventRepository = new EventRepository(events);
+        var bookingRepository = new BookingRepository(bookings);
+        var bookingService = new BookingService(bookingRepository, eventRepository);
 
         return (bookingService, bookingRepository, events);
     }

@@ -10,12 +10,12 @@ namespace EventsService.Tests;
 public class InMemoryEventServiceTests
 {
     private readonly Mock<IEventRepository> _eventRepositoryMock;
-    private readonly InMemoryEventService _eventsService;
+    private readonly EventService _eventsService;
 
     public InMemoryEventServiceTests()
     {
         _eventRepositoryMock = new Mock<IEventRepository>();
-        _eventsService = new InMemoryEventService(_eventRepositoryMock.Object);
+        _eventsService = new EventService(_eventRepositoryMock.Object);
     }
 
     [Fact]

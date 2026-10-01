@@ -11,17 +11,15 @@ namespace EventsService.Api.Extensions
     {
         public static IServiceCollection AddApplicationServices(this IServiceCollection services)
         {
-            services.AddScoped<IEventService, InMemoryEventService>();
-            services.AddSingleton<IBookingService, InMemoryBookingService>();
+            services.AddScoped<IEventService, EventService>();
+            services.AddScoped<IBookingService, BookingService>();
             return services;
         }
 
         public static IServiceCollection AddInfrastructureServices(this IServiceCollection services)
         {
-            services.AddSingleton<List<Event>>();
-            services.AddSingleton<List<Booking>>();
-            services.AddSingleton<IEventRepository, InMemoryEventRepository>();
-            services.AddSingleton<IBookingRepository, InMemoryBookingRepository>();
+            services.AddScoped<IEventRepository, EventRepository>();
+            services.AddScoped<IBookingRepository, BookingRepository>();
             services.AddHostedService<BookingProcessingBackgroundService>();
             return services;
         }

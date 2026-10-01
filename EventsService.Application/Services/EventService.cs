@@ -5,7 +5,7 @@ using EventsService.Domain.SystemExceptions;
 
 namespace EventsService.Application.Services
 {
-    public sealed class InMemoryEventService(IEventRepository eventRepository) : IEventService
+    public sealed class EventService(IEventRepository eventRepository) : IEventService
     {
         public async Task<EventResponseDto> CreateEventAsync(CreateEventDto eventModel, CancellationToken cancellationToken)
         {

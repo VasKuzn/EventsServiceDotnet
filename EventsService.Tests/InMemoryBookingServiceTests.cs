@@ -12,13 +12,13 @@ public class InMemoryBookingServiceTests
 {
     private readonly Mock<IBookingRepository> _bookingRepositoryMock;
     private readonly Mock<IEventRepository> _eventRepositoryMock;
-    private readonly InMemoryBookingService _bookingService;
+    private readonly BookingService _bookingService;
 
     public InMemoryBookingServiceTests()
     {
         _bookingRepositoryMock = new Mock<IBookingRepository>();
         _eventRepositoryMock = new Mock<IEventRepository>();
-        _bookingService = new InMemoryBookingService(_bookingRepositoryMock.Object, _eventRepositoryMock.Object);
+        _bookingService = new BookingService(_bookingRepositoryMock.Object, _eventRepositoryMock.Object);
     }
 
     private static Event CreateExistingEvent(Guid eventId) =>
