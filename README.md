@@ -41,7 +41,13 @@ export ConnectionStrings__DefaultConnection="Host=myhost;Port=5432;Database=Even
 $env:ConnectionStrings__DefaultConnection = "Host=myhost;Port=5432;Database=EventApi;Username=user;Password=secret"
 ```
 
-Схема БД создаётся автоматически при запуске приложения: в `Program.cs` после `builder.Build()` вызывается `db.Database.EnsureCreated()`. Метод создаёт базу данных и таблицы `Event` и `Booking`, если их ещё нет, а при повторных запусках ничего не делает. Миграции не используются: если схема сущностей изменится, существующую базу нужно удалить, чтобы `EnsureCreated` создал её заново.
+Схема БД создаётся миграциями EF Core (папка `EventsService.Infrastructure/Migrations`). При запуске приложения в `Program.cs` после `builder.Build()` вызывается `db.Database.Migrate()`: он создаёт базу данных, если её нет, и применяет все ещё не применённые миграции. Если база ранее была создана через `EnsureCreated()`, её нужно удалить (например, через pgAdmin), иначе `Migrate()` упадёт с ошибкой «relation already exists».
+
+Новая миграция после изменения сущностей (из папки `EventsService`):
+
+```powershell
+dotnet ef migrations add <ИмяМиграции> --project EventsService.Infrastructure --startup-project EventsService.Api --output-dir Migrations
+```
 
 ## Запуск (в папке EventsService)
 
