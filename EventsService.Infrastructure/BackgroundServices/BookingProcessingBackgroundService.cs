@@ -2,7 +2,6 @@ using EventsService.Application.Interfaces.Bookings;
 using EventsService.Application.Interfaces.Events;
 using EventsService.Domain.Enums;
 using EventsService.Domain.Models;
-using EventsService.Infrastructure.DataAccess;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -42,16 +41,12 @@ namespace EventsService.Infrastructure.BackgroundServices
             }
         }
 
-        private async Task<List<Guid>> GetPendingBookingIdsAsync(CancellationToken stoppingToken)
+        private async Task<IReadOnlyList<Guid>> GetPendingBookingIdsAsync(CancellationToken stoppingToken)
         {
             using var scope = scopeFactory.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var bookingRepository = scope.ServiceProvider.GetRequiredService<IBookingRepository>();
 
-            return await dbContext.Bookings
-                .AsNoTracking()
-                .Where(b => b.Status == BookingStatus.Pending)
-                .Select(b => b.Id)
-                .ToListAsync(stoppingToken);
+            return await bookingRepository.GetPendingBookingIdsAsync(stoppingToken);
         }
 
         private async Task ProcessBookingAsync(Guid bookingId, CancellationToken stoppingToken)
