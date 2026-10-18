@@ -1,4 +1,5 @@
 using EventsService.Application.Interfaces.Bookings;
+using EventsService.Domain.Enums;
 using EventsService.Domain.Models;
 using EventsService.Infrastructure.DataAccess;
 using Microsoft.EntityFrameworkCore;
@@ -16,37 +17,25 @@ namespace EventsService.Infrastructure.Repositories
             return bookingEntity;
         }
 
-        public async Task<bool> DeleteBookingAsync(Guid id, CancellationToken ct)
-        {
-            var bookingEntity = await dbContext.Bookings.FindAsync([id], ct);
-            if (bookingEntity is null)
-            {
-                return false;
-            }
-
-            dbContext.Bookings.Remove(bookingEntity);
-            await dbContext.SaveChangesAsync(ct);
-
-            return true;
-        }
-
         public async Task<Booking?> GetBookingAsync(Guid id, CancellationToken ct)
         {
             return await dbContext.Bookings.FirstOrDefaultAsync(b => b.Id == id, ct);
         }
 
-        public async Task<IReadOnlyList<Booking>> GetBookingsAsync(CancellationToken ct)
+        public async Task<IReadOnlyList<Guid>> GetPendingBookingIdsAsync(CancellationToken ct)
         {
-            return await dbContext.Bookings.ToListAsync(ct);
+            return await dbContext.Bookings
+                .AsNoTracking()
+                .Where(b => b.Status == BookingStatus.Pending)
+                .Select(b => b.Id)
+                .ToListAsync(ct);
         }
 
-        public async Task<Booking?> UpdateBookingAsync(Booking bookingEntity, CancellationToken ct)
+        public async Task UpdateBookingAsync(Booking bookingEntity, CancellationToken ct)
         {
             dbContext.Bookings.Update(bookingEntity);
 
             await dbContext.SaveChangesAsync(ct);
-
-            return bookingEntity;
         }
     }
 }
