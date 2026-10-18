@@ -41,13 +41,24 @@ export ConnectionStrings__DefaultConnection="Host=myhost;Port=5432;Database=Even
 $env:ConnectionStrings__DefaultConnection = "Host=myhost;Port=5432;Database=EventApi;Username=user;Password=secret"
 ```
 
-Схема БД создаётся миграциями EF Core (папка `EventsService.Infrastructure/Migrations`). При запуске приложения в `Program.cs` после `builder.Build()` вызывается `db.Database.Migrate()`: он создаёт базу данных, если её нет, и применяет все ещё не применённые миграции. Если база ранее была создана через `EnsureCreated()`, её нужно удалить (например, через pgAdmin), иначе `Migrate()` упадёт с ошибкой «relation already exists».
+Схема БД создаётся миграциями EF Core (папка `EventsService.Infrastructure/Migrations`). При запуске приложения в `Program.cs` после `builder.Build()` вызывается `db.Database.Migrate()`: он создаёт базу данных, если её нет, и применяет все ещё не применённые миграции. Если база ранее была создана через `EnsureCreated()`, её нужно удалить (например, через pgAdmin), чтобы схема создавалась с нуля именно миграциями: иначе в базе останутся старые таблицы `Event` и `Booking` без истории миграций.
+
+Начальная миграция `InitialCreate` создаёт схему:
+
+| Таблица    | Колонки                                                                                                   |
+| ---------- | --------------------------------------------------------------------------------------------------------- |
+| `events`   | `id` (PK, uuid), `title` (varchar 250), `description` (varchar 2500, null), `start_at`, `end_at` (timestamptz), `total_seats`, `available_seats` (int) |
+| `bookings` | `id` (PK, uuid), `event_id` (uuid), `status` (varchar 20), `created_at` (timestamptz), `processed_at` (timestamptz, null) |
+
+Между таблицами настроен внешний ключ `bookings.event_id → events.id` с каскадным удалением (при удалении события удаляются его брони) и индекс по `bookings.event_id`.
 
 Новая миграция после изменения сущностей (из папки `EventsService`):
 
 ```powershell
 dotnet ef migrations add <ИмяМиграции> --project EventsService.Infrastructure --startup-project EventsService.Api --output-dir Migrations
 ```
+
+Для команд `dotnet ef` нужен инструмент `dotnet-ef` (`dotnet tool install --global dotnet-ef`) версии, совпадающей с версией EF Core в проекте.
 
 ## Запуск (в папке EventsService)
 
@@ -178,13 +189,13 @@ dotnet run --project EventsService.Api
 | `Confirmed` | 1        | бронь подтверждена (обработка прошла без ошибок) |
 | `Rejected`  | 2        | бронь отклонена (при обработке возникла ошибка)  |
 
-Данные о бронированиях и событиях хранятся в PostgreSQL (таблицы `Booking` и `Event`) и сохраняются между перезапусками приложения (`EventsService.Infrastructure/Repositories/BookingRepository` и `EventRepository`).
+Данные о бронированиях и событиях хранятся в PostgreSQL (таблицы `bookings` и `events`) и сохраняются между перезапусками приложения. Вся работа с `AppDbContext` инкапсулирована в репозиториях `EventRepository` и `BookingRepository` (`EventsService.Infrastructure/Repositories`, интерфейсы `IEventRepository` и `IBookingRepository` - в Application), сервисы обращаются к данным только через них. Репозитории зарегистрированы как `Scoped`. Фильтрация и пагинация списка событий выполняются на стороне БД в `EventRepository.GetEventsAsync` (сортировка по `StartAt`, затем по `Id`, чтобы страницы не пересекались).
 
 ### Фоновая обработка (`BookingProcessingBackgroundService`)
 
 Реализована как `BackgroundService` (`EventsService.Infrastructure/BackgroundServices`), зарегистрирована в DI через `AddHostedService`. Сервис - singleton, а `AppDbContext` и репозитории - scoped, поэтому напрямую их внедрить нельзя: сервис получает `IServiceScopeFactory` и создаёт scope сам:
 
-- раз в `PollingInterval` (10 секунд) создаёт scope, получает `AppDbContext`, выбирает из БД только идентификаторы броней в статусе `Pending` и закрывает scope;
+- раз в `PollingInterval` (10 секунд) создаёт scope, получает `IBookingRepository`, выбирает только идентификаторы броней в статусе `Pending` (`GetPendingBookingIdsAsync`) и закрывает scope;
 - все найденные брони обрабатываются параллельно - `ProcessBookingAsync(Guid bookingId)` запускается для каждой брони отдельным `Task`, и итерация ждёт их завершения через `Task.WhenAll`;
 - каждая задача создаёт собственный scope, а значит и собственный `DbContext`, и заново загружает бронь из БД; если бронь уже не `Pending` или удалена - она пропускается;
 - для каждой брони сначала имитируется обращение к внешней системе через `Task.Delay(ProcessingDelay)` (2 секунды) - так задержки разных броней выполняются параллельно, а не суммируются;
@@ -330,6 +341,27 @@ dotnet test EventsService.Tests/EventsService.Tests.csproj
 dotnet test
 ```
 
+### Интеграционные тесты (Testcontainers)
+
+Интеграционные тесты находятся в проекте `EventsService.IntegrationTests` и работают с **реальным PostgreSQL**, который поднимается в Docker через [Testcontainers](https://dotnet.testcontainers.org/) (`Testcontainers.PostgreSql`, образ `postgres:16-alpine`). Для запуска нужен **запущенный Docker**; PostgreSQL устанавливать не требуется, контейнер стартует и удаляется автоматически:
+
+```bash
+dotnet test EventsService.IntegrationTests/EventsService.IntegrationTests.csproj
+```
+
+Как устроены тесты:
+
+- `PostgresFixture` (`IAsyncLifetime`) поднимает **один контейнер на все тесты** и отдаёт строку подключения из объекта контейнера (порт назначается динамически, ничего не захардкожено);
+- перед **каждым** тестом база приводится к чистому состоянию: `EnsureDeleted()` + `Migrate()` (`DatabaseTestBase`), поэтому схема всегда создаётся именно миграциями, а тесты не зависят друг от друга и от порядка запуска;
+- все тестовые классы входят в одну xUnit-коллекцию `Postgres` (общий контейнер, последовательное выполнение);
+- тесты оформлены по схеме Arrange / Act / Assert; проверки читают данные через новый `DbContext`, а не из change tracker.
+
+Что покрыто:
+
+- `MigrationTests` - применение миграции `InitialCreate` (нет неприменённых миграций, повторный `Migrate()` безопасен), отсутствие расхождений между моделью и миграциями, наличие таблиц `events` и `bookings`, типы/длины/nullable колонок, первичные ключи, внешний ключ `bookings.event_id → events.id` с `ON DELETE CASCADE`, индекс по `event_id`, нарушение FK при вставке брони с несуществующим событием;
+- `EventRepositoryTests` - все методы `EventRepository`: создание (в том числе дубликат Id), получение по Id, обновление существующего/несуществующего события, удаление (в том числе каскадное удаление броней), список событий: все варианты фильтров (`title` - регистр, подстрока, пустое значение, спецсимволы `%` и `_`; `from`/`to` - включительные границы; комбинации фильтров; пустой результат) и пагинация (страницы не пересекаются, последняя неполная страница, страница за пределами данных, `totalCount` с учётом фильтра, стабильный порядок);
+- `BookingRepositoryTests` - все методы `BookingRepository`: создание (в том числе для несуществующего события), получение по Id, выборка идентификаторов `Pending`-броней, обновление статуса (`Confirmed`/`Rejected`) с `ProcessedAt`.
+
 ## Стек
 
-ASP.NET Core(.NET 10), Entity Framework Core + PostgreSQL (Npgsql), Swashbuckle (Swagger UI), DI-контейнер встроенный в ASP.NET Core, xUnit + EF Core InMemory (в тестах).
+ASP.NET Core(.NET 10), Entity Framework Core + PostgreSQL (Npgsql), Swashbuckle (Swagger UI), DI-контейнер встроенный в ASP.NET Core, xUnit + EF Core InMemory (юнит-тесты), xUnit + Testcontainers.PostgreSql (интеграционные тесты).
