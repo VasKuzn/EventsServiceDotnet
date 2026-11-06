@@ -17,7 +17,7 @@ namespace EventsService.Api.Exceptions
                 "Error Message: {exceptionMessage}, Time of occurrence {time}",
                 exceptionMessage, DateTime.UtcNow);
 
-            var statusCode = MapStatusCode(exception);
+            var (statusCode, title, type) = MapException(exception);
             httpContext.Response.StatusCode = statusCode;
 
             var detail = statusCode == StatusCodes.Status500InternalServerError && !environment.IsDevelopment()
@@ -27,6 +27,8 @@ namespace EventsService.Api.Exceptions
             var problemDetails = new ProblemDetails
             {
                 Status = statusCode,
+                Title = title,
+                Type = type,
                 Detail = detail
             };
 
@@ -46,13 +48,17 @@ namespace EventsService.Api.Exceptions
             });
         }
 
-        private static int MapStatusCode(Exception ex)
+        private static (int StatusCode, string Title, string Type) MapException(Exception ex)
         => ex switch
         {
-            ValidationException => StatusCodes.Status400BadRequest,
-            NotFoundException => StatusCodes.Status404NotFound,
-            NoAvailableSeatsException => StatusCodes.Status409Conflict,
-            _ => StatusCodes.Status500InternalServerError
+            ValidationException => (StatusCodes.Status400BadRequest, "Bad Request",
+                "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.1"),
+            NotFoundException => (StatusCodes.Status404NotFound, "Not Found",
+                "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.5"),
+            NoAvailableSeatsException => (StatusCodes.Status409Conflict, "Conflict",
+                "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.10"),
+            _ => (StatusCodes.Status500InternalServerError, "Internal Server Error",
+                "https://www.rfc-editor.org/rfc/rfc9110#section-15.6.1")
         };
     }
 }
