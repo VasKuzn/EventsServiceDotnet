@@ -35,9 +35,35 @@ namespace EventsService.Infrastructure.Repositories
             return await dbContext.Events.FirstOrDefaultAsync(e => e.Id == id, ct);
         }
 
-        public async Task<IReadOnlyList<Event>> GetEventsAsync(CancellationToken ct)
+        public async Task<(IReadOnlyList<Event> Items, int TotalCount)> GetEventsAsync(
+            string? title, DateTime? from, DateTime? to, int page, int pageSize, CancellationToken ct)
         {
-            return await dbContext.Events.ToListAsync(ct);
+            var query = dbContext.Events.AsNoTracking();
+
+            if (!string.IsNullOrWhiteSpace(title))
+            {
+                var loweredTitle = title.ToLower();
+                query = query.Where(e => e.Title.ToLower().Contains(loweredTitle));
+            }
+            if (from.HasValue)
+            {
+                query = query.Where(e => e.StartAt >= from.Value);
+            }
+            if (to.HasValue)
+            {
+                query = query.Where(e => e.EndAt <= to.Value);
+            }
+
+            var totalCount = await query.CountAsync(ct);
+
+            var items = await query
+                .OrderBy(e => e.StartAt)
+                .ThenBy(e => e.Id)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync(ct);
+
+            return (items, totalCount);
         }
 
         public async Task<Event?> UpdateEventAsync(Event eventEntity, CancellationToken ct)

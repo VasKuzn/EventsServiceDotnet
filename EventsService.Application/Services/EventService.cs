@@ -1,6 +1,5 @@
 using EventsService.Application.DataTransferObjects.Events;
 using EventsService.Application.Interfaces.Events;
-using EventsService.Domain.Models;
 using EventsService.Domain.SystemExceptions;
 
 namespace EventsService.Application.Services
@@ -27,34 +26,11 @@ namespace EventsService.Application.Services
 
         public async Task<PaginatedResult<EventResponseDto>> GetEventsAsync(string? title = null, DateTime? from = null, DateTime? to = null, int page = 1, int pageSize = 10, CancellationToken cancellationToken = default)
         {
-            var events = await eventRepository.GetEventsAsync(cancellationToken);
-
-            IEnumerable<Event> filteredEvents = events;
-
-            if (!string.IsNullOrWhiteSpace(title))
-            {
-                filteredEvents = filteredEvents.Where(e => e.Title.Contains(title, StringComparison.OrdinalIgnoreCase));
-            }
-            if (from.HasValue)
-            {
-                filteredEvents = filteredEvents.Where(e => e.StartAt >= from.Value);
-            }
-            if (to.HasValue)
-            {
-                filteredEvents = filteredEvents.Where(e => e.EndAt <= to.Value);
-            }
-
-            var totalCount = filteredEvents.Count();
-
-            var pagedEvents = filteredEvents
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .Select(EventResponseDto.FromEntity)
-                .ToList();
+            var (events, totalCount) = await eventRepository.GetEventsAsync(title, from, to, page, pageSize, cancellationToken);
 
             return new PaginatedResult<EventResponseDto>
             {
-                Items = pagedEvents,
+                Items = events.Select(EventResponseDto.FromEntity).ToList(),
                 TotalCount = totalCount,
                 Page = page,
                 PageSize = pageSize
