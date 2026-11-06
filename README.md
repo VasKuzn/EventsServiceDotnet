@@ -1,23 +1,34 @@
 # REST API для управления событиями
 
+Исходный код: [EventsServiceDotnet](https://github.com/VasKuzn/EventsServiceDotnet).
+
 Для запуска требуется:
 
 - .NET SDK 10 версии;
 - **PostgreSQL** - приложение хранит события и бронирования в PostgreSQL и без доступной базы не запустится.
 
 Проект представляет собой API для управления событиями.
-Архитектура - (Domain - Application - Infrastructure - API):
+Архитектура - четыре отдельных проекта (Domain - Application - Infrastructure - Presentation). Роль Presentation выполняет `EventsService.Api`:
 
-- Domain содержит ядро приложения - неизменяемые сущности;
-- Application - бизнес-логика + контракты системы;
-- Infrastructure - связь с хранилищем данных (EF Core + PostgreSQL, `AppDbContext`) и реализация CRUD-операций;
-- API - точка входа в приложение, содержащая контроллеры, DI(стартовать приложение нужно именно отсюда).
+- `EventsService.Domain` - доменные сущности `Event` и `Booking`, перечисление `BookingStatus`, доменные исключения и правила изменения состояния сущностей. Не ссылается на другие проекты или сторонние пакеты;
+- `EventsService.Application` - бизнес-логика (`EventService`, `BookingService`, `BookingProcessingService`), интерфейсы сервисов и портов (`IEventRepository`, `IBookingRepository`, `IEventSeatReleaser`), DTO. Из проектов ссылается только на Domain;
+- `EventsService.Infrastructure` - реализации портов: репозитории EF Core + PostgreSQL, `AppDbContext`, конфигурации сущностей, миграции и `EventSeatReleaser`. Здесь же находится фоновый `BookingProcessingBackgroundService`, который запускает обработку бронирований через Application;
+- `EventsService.Api` (Presentation) - точка входа, контроллеры, HTTP-маппинг доменных исключений через `GlobalExceptionHandler`, Swagger и composition root в `Program.cs`. Стартовать приложение нужно именно отсюда.
 
-Связи проекта:
+Связи проектов заданы через `ProjectReference`:
 
-API -> Application -> Domain;
+- Application -> Domain;
+- Infrastructure -> Application и Domain;
+- API -> Application и Infrastructure.
 
-API -> Infrastructure -> Application -> Domain.
+Регистрация зависимостей каждого слоя вынесена в `Extensions/ServiceCollectionExtensions.cs` своего проекта:
+
+- `AddApplicationServices()` - сервисы событий, бронирования и фоновой обработки брони;
+- `AddInfrastructureServices(configuration)` - `AppDbContext`, репозитории, возврат мест и запуск фонового сервиса через `AddHostedService`.
+
+Composition root остаётся в `EventsService.Api/Program.cs`: здесь вызываются оба extension-метода и настраивается HTTP-конвейер. Контроллеры получают запрос, вызывают сервис Application и возвращают HTTP-ответ.
+
+Тесты находятся в отдельных проектах: `EventsService.Tests` ссылается на Application и Infrastructure, `EventsService.IntegrationTests` - на Domain и Infrastructure. Ссылок на API у тестовых проектов нет.
 
 ## База данных (PostgreSQL)
 
@@ -45,10 +56,10 @@ $env:ConnectionStrings__DefaultConnection = "Host=myhost;Port=5432;Database=Even
 
 Начальная миграция `InitialCreate` создаёт схему:
 
-| Таблица    | Колонки                                                                                                   |
-| ---------- | --------------------------------------------------------------------------------------------------------- |
+| Таблица    | Колонки                                                                                                                                                |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `events`   | `id` (PK, uuid), `title` (varchar 250), `description` (varchar 2500, null), `start_at`, `end_at` (timestamptz), `total_seats`, `available_seats` (int) |
-| `bookings` | `id` (PK, uuid), `event_id` (uuid), `status` (varchar 20), `created_at` (timestamptz), `processed_at` (timestamptz, null) |
+| `bookings` | `id` (PK, uuid), `event_id` (uuid), `status` (varchar 20), `created_at` (timestamptz), `processed_at` (timestamptz, null)                              |
 
 Между таблицами настроен внешний ключ `bookings.event_id → events.id` с каскадным удалением (при удалении события удаляются его брони) и индекс по `bookings.event_id`.
 
@@ -62,10 +73,11 @@ dotnet ef migrations add <ИмяМиграции> --project EventsService.Infras
 
 ## Запуск (в папке EventsService)
 
-build при желании выполнять в EventsService папке - сборка всего solution
+Команды выполняются из папки `EventsService`:
 
 ```bash
 dotnet restore
+dotnet build
 dotnet run --project EventsService.Api
 ```
 
@@ -165,9 +177,9 @@ dotnet run --project EventsService.Api
 
 ### Примитивы синхронизации: какие и зачем
 
-| Примитив                      | Где                                         | Что защищает                                                                                                                              |
-| ----------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `static SemaphoreSlim(1, 1)`  | `BookingService.CreateBookingAsync`         | Атомарность проверки `AvailableSeats` и создания брони при параллельных `POST /events/{id}/book` на одно событие - защита от overbooking. |
+| Примитив                     | Где                                 | Что защищает                                                                                                                              |
+| ---------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `static SemaphoreSlim(1, 1)` | `BookingService.CreateBookingAsync` | Атомарность проверки `AvailableSeats` и создания брони при параллельных `POST /events/{id}/book` на одно событие - защита от overbooking. |
 
 В `BookingProcessingBackgroundService` синхронизация не нужна: каждая бронь обрабатывается в своём scope со своим `DbContext`, а общих изменяемых объектов между задачами нет.
 
@@ -193,19 +205,24 @@ dotnet run --project EventsService.Api
 
 ### Фоновая обработка (`BookingProcessingBackgroundService`)
 
-Реализована как `BackgroundService` (`EventsService.Infrastructure/BackgroundServices`), зарегистрирована в DI через `AddHostedService`. Сервис - singleton, а `AppDbContext` и репозитории - scoped, поэтому напрямую их внедрить нельзя: сервис получает `IServiceScopeFactory` и создаёт scope сам:
+Реализована как `BackgroundService` (`EventsService.Infrastructure/BackgroundServices`), зарегистрирована в DI через `AddInfrastructureServices` → `AddHostedService`. Сервис - singleton, а `IBookingProcessingService`, `AppDbContext` и репозитории - scoped, поэтому сервис получает `IServiceScopeFactory` и создаёт scope сам:
 
-- раз в `PollingInterval` (10 секунд) создаёт scope, получает `IBookingRepository`, выбирает только идентификаторы броней в статусе `Pending` (`GetPendingBookingIdsAsync`) и закрывает scope;
-- все найденные брони обрабатываются параллельно - `ProcessBookingAsync(Guid bookingId)` запускается для каждой брони отдельным `Task`, и итерация ждёт их завершения через `Task.WhenAll`;
-- каждая задача создаёт собственный scope, а значит и собственный `DbContext`, и заново загружает бронь из БД; если бронь уже не `Pending` или удалена - она пропускается;
-- для каждой брони сначала имитируется обращение к внешней системе через `Task.Delay(ProcessingDelay)` (2 секунды) - так задержки разных броней выполняются параллельно, а не суммируются;
-- примитивы синхронизации не используются: у каждой задачи свой `DbContext`;
-- если к моменту обработки событие уже удалено - бронь переводится в `Rejected` и обработка завершается с логом `Warning`;
-- если событие найдено и обработка прошла без ошибок - бронь переводится в `Confirmed`;
-- если во время обработки возникло непредвиденное исключение - бронь переводится в `Rejected`, а занятое ею место возвращается в пул через `Event.ReleaseSeats()`;
+- раз в `PollingInterval` (10 секунд между итерациями) создаёт scope, получает `IBookingProcessingService` и запрашивает идентификаторы `Pending`-броней через `GetPendingBookingIdsAsync`;
+- все найденные брони обрабатываются параллельно; для каждой сначала выполняется `Task.Delay(ProcessingDelay)` (2 секунды), затем создаётся отдельный scope и вызывается `IBookingProcessingService.ProcessBookingAsync`;
+- завершение задач ожидается через `Task.WhenAll`; отмена и ошибки итерации обрабатываются фоновым сервисом.
+
+Решения о статусе брони находятся в `BookingProcessingService` (`EventsService.Application/Services`):
+
+- заново загружает бронь через `IBookingRepository`; если она удалена или уже не `Pending` - пропускает её;
+- если событие не найдено - переводит бронь в `Rejected`; при обычном удалении события сама бронь удаляется каскадно;
+- если событие найдено - переводит бронь в `Confirmed`;
+- если ошибка возникла до смены статуса - отклоняет бронь, сохраняет её и вызывает порт `IEventSeatReleaser`, чтобы вернуть занятое место;
 - в обоих терминальных статусах заполняется `ProcessedAt`;
-- корректно обрабатывает отмену при остановке хоста и ошибки на уровне отдельной брони/итерации, не прерывая работу сервиса;
-- ход обработки логируется через `ILogger<BookingProcessingBackgroundService>`; лог "Processing booking {BookingId}" пишется в начале `ProcessBookingAsync` для каждой брони до её `await`, поэтому в выводе видно, что несколько броней стартуют одновременно, до завершения обработки любой из них.
+- отмену передаёт вызывающему коду; если сохранение уже изменённого статуса завершилось ошибкой, передаёт исходную ошибку без повторного перехода в `Rejected`.
+
+Возврат мест реализован в `EventSeatReleaser` (`EventsService.Infrastructure/Services`): загружает событие, вызывает доменный метод `Event.ReleaseSeats()` и сохраняет результат через репозиторий. При `DbUpdateConcurrencyException` делает до трёх попыток, каждый раз создавая новый scope для загрузки актуального состояния. Application знает только об интерфейсе `IEventSeatReleaser` и не зависит от EF Core.
+
+Ход обработки брони логируется через `ILogger<BookingProcessingService>`, ошибки фонового цикла - через `ILogger<BookingProcessingBackgroundService>`, повторы возврата мест - через `ILogger<EventSeatReleaser>`.
 
 ### Пример сценария использования
 
@@ -234,7 +251,8 @@ curl -i -X POST http://localhost:5000/events/{eventId}/book
 sleep 12
 curl http://localhost:5000/bookings/{bookingId}
 # -> status: 1 (Confirmed) или 2 (Rejected), processedAt заполнен
-# если Rejected (например, событие удалили до обработки) - AvailableSeats события восстановится на 1
+# если обработка отклонена из-за ошибки до смены статуса и событие существует - место возвращается
+# при удалении события его брони удаляются каскадно
 ```
 
 ### Пример сценария с овербукингом
@@ -273,7 +291,7 @@ curl -s http://localhost:5000/events/${eventId} | jq '.availableSeats'
 
 ```json
 {
-  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.5",
+  "type": "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.5",
   "title": "Not Found",
   "status": 404,
   "detail": "Сущность с Id: {id} не найдена"
@@ -284,7 +302,7 @@ curl -s http://localhost:5000/events/${eventId} | jq '.availableSeats'
 
 ```json
 {
-  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
+  "type": "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.1",
   "title": "Bad Request",
   "status": 400,
   "detail": "EndAt должен быть позже StartAt",
@@ -298,7 +316,7 @@ curl -s http://localhost:5000/events/${eventId} | jq '.availableSeats'
 
 ```json
 {
-  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.10",
+  "type": "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.10",
   "title": "Conflict",
   "status": 409,
   "detail": "No available seats for this event"
@@ -309,7 +327,7 @@ curl -s http://localhost:5000/events/${eventId} | jq '.availableSeats'
 
 ```json
 {
-  "type": "https://tools.ietf.org/html/rfc9110#section-15.6.1",
+  "type": "https://www.rfc-editor.org/rfc/rfc9110#section-15.6.1",
   "title": "Internal Server Error",
   "status": 500,
   "detail": "An internal server error has occurred. Please try again later."
@@ -329,13 +347,16 @@ curl -s http://localhost:5000/events/${eventId} | jq '.availableSeats'
   - смена статуса брони через `Confirm()`/`Reject()` (статус + `ProcessedAt`), восстановление `AvailableSeats` и возможность новой брони после `Reject()` + `ReleaseSeats()`;
   - конкурентность: 20 параллельных запросов (`Task.Run` + `Task.WhenAll`, реальный параллелизм на пуле потоков) на событие с 5 местами - ровно 5 успехов и 15 `NoAvailableSeatsException`, `AvailableSeats == 0`; 10 параллельных запросов на событие с 10 местами - все 10 броней получают уникальные Id.
 
-Запуск всех тестов (из папки `EventsService`):
+- `BookingProcessingServiceTests` - подтверждение брони, пропуск отсутствующей/обработанной брони, отклонение при отсутствии события, возврат места при ошибке обработки, отмена и ошибка сохранения статуса. Зависимости заменяются через Moq;
+- `EventSeatReleaserTests` - возврат места, повторная загрузка события после конфликта EF Core и ограничение числа попыток. Репозитории заменяются через Moq, реальные БД и Docker не нужны.
+
+Запуск юнит-тестов (из папки `EventsService`):
 
 ```bash
 dotnet test EventsService.Tests/EventsService.Tests.csproj
 ```
 
-Либо запустить тесты для всего solution:
+Либо запустить тесты для всего solution (нужен запущенный Docker для интеграционных тестов):
 
 ```bash
 dotnet test

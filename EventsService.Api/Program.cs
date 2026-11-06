@@ -1,6 +1,7 @@
 using EventsService.Api.Exceptions;
-using EventsService.Api.Extensions;
+using EventsService.Application.Extensions;
 using EventsService.Infrastructure.DataAccess;
+using EventsService.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
