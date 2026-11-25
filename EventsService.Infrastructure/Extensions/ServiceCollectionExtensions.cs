@@ -1,8 +1,10 @@
+using EventsService.Application.Interfaces.Auth;
 using EventsService.Application.Interfaces.Bookings;
 using EventsService.Application.Interfaces.Events;
 using EventsService.Infrastructure.BackgroundServices;
 using EventsService.Infrastructure.DataAccess;
 using EventsService.Infrastructure.Repositories;
+using EventsService.Infrastructure.Security;
 using EventsService.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -17,6 +19,8 @@ namespace EventsService.Infrastructure.Extensions
             services.AddDbContext<AppDbContext>(options =>
                 options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
             services.AddInfrastructureAdapters();
+            services.AddSingleton<IPasswordHasher, Sha256PasswordHasher>();
+            services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
             services.AddHostedService<BookingProcessingBackgroundService>();
             return services;
         }

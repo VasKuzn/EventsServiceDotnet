@@ -54,8 +54,30 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
         // Assert
         Assert.Collection(applied,
             migration => Assert.EndsWith("InitialCreate", migration),
-            migration => Assert.EndsWith("UseEventRowVersion", migration));
+            migration => Assert.EndsWith("UseEventRowVersion", migration),
+            migration => Assert.EndsWith("AddUsersAndBookingOwner", migration));
         Assert.Empty(pending);
+    }
+
+    [Fact]
+    public async Task Migrate_ExistingBooking_AssignsLegacyOwnerAndPreservesBooking()
+    {
+        await using var context = CreateContext();
+        await context.Database.MigrateAsync("UseEventRowVersion");
+        var eventEntity = TestData.CreateEvent();
+        await SeedAsync(eventEntity);
+        var bookingId = Guid.NewGuid();
+        await context.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO bookings (id, event_id, status, created_at)
+            VALUES ({bookingId}, {eventEntity.Id}, 'Pending', {DateTime.UtcNow})
+            """);
+
+        await context.Database.MigrateAsync();
+
+        var booking = await context.Bookings.Include(b => b.User).SingleAsync();
+        Assert.Equal(bookingId, booking.Id);
+        Assert.Equal(eventEntity.Id, booking.EventId);
+        Assert.Equal(Booking.LegacyOwnerId, booking.User.Id);
     }
 
     [Fact]
@@ -86,7 +108,7 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
     }
 
     [Fact]
-    public async Task Schema_ContainsEventsAndBookingsTables()
+    public async Task Schema_ContainsEventsBookingsAndUsersTables()
     {
         // Act
         var tables = await QueryAsync(
@@ -94,7 +116,7 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
             r => r.GetString(0));
 
         // Assert
-        Assert.Equivalent(new[] { "events", "bookings", "__EFMigrationsHistory" }, tables);
+        Assert.Equivalent(new[] { "events", "bookings", "users", "__EFMigrationsHistory" }, tables);
     }
 
     [Fact]
@@ -130,6 +152,7 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
             {
                 ["id"] = ("uuid", false, null),
                 ["event_id"] = ("uuid", false, null),
+                ["user_id"] = ("uuid", false, null),
                 ["status"] = ("character varying", false, 20),
                 ["created_at"] = ("timestamp with time zone", false, null),
                 ["processed_at"] = ("timestamp with time zone", true, null),
@@ -140,6 +163,7 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
     [Theory]
     [InlineData("events")]
     [InlineData("bookings")]
+    [InlineData("users")]
     public async Task Schema_Tables_HavePrimaryKeyOnId(string table)
     {
         // Act
@@ -159,7 +183,7 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
     }
 
     [Fact]
-    public async Task Schema_Bookings_HasCascadingForeignKeyToEvents()
+    public async Task Schema_Bookings_HasForeignKeysToEventsAndUsers()
     {
         // Act
         var foreignKeys = await QueryAsync(
@@ -177,15 +201,13 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
             r => (Column: r.GetString(0), RefTable: r.GetString(1), RefColumn: r.GetString(2), DeleteRule: r.GetString(3)));
 
         // Assert
-        var foreignKey = Assert.Single(foreignKeys);
-        Assert.Equal("event_id", foreignKey.Column);
-        Assert.Equal("events", foreignKey.RefTable);
-        Assert.Equal("id", foreignKey.RefColumn);
-        Assert.Equal("CASCADE", foreignKey.DeleteRule);
+        Assert.Equal(2, foreignKeys.Count);
+        Assert.Contains(("event_id", "events", "id", "CASCADE"), foreignKeys);
+        Assert.Contains(("user_id", "users", "id", "RESTRICT"), foreignKeys);
     }
 
     [Fact]
-    public async Task Schema_Bookings_HasIndexOnEventId()
+    public async Task Schema_Bookings_HasIndexesOnEventIdAndUserId()
     {
         // Act
         var indexedColumns = await QueryAsync(
@@ -199,15 +221,21 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
             r => r.GetString(0));
 
         // Assert
-        Assert.Equal(["event_id"], indexedColumns);
+        Assert.Equivalent(new[] { "event_id", "user_id" }, indexedColumns, strict: true);
     }
 
-    [Fact]
-    public async Task Database_InsertBookingForUnknownEvent_ViolatesForeignKeyConstraint()
+    [Theory]
+    [InlineData(false, "FK_bookings_events_event_id")]
+    [InlineData(true, "FK_bookings_users_user_id")]
+    public async Task Database_InsertBookingForUnknownEventOrUser_ViolatesForeignKeyConstraint(bool unknownUser, string constraint)
     {
         // Arrange
         await using var context = CreateContext();
-        context.Add(Booking.Create(Guid.NewGuid()));
+        var eventEntity = TestData.CreateEvent();
+        await SeedAsync(eventEntity);
+        context.Add(unknownUser
+            ? Booking.Create(eventEntity.Id, Guid.NewGuid())
+            : Booking.Create(Guid.NewGuid(), Booking.LegacyOwnerId));
 
         // Act
         var exception = await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync());
@@ -215,6 +243,7 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
         // Assert
         var postgresException = Assert.IsType<PostgresException>(exception.InnerException);
         Assert.Equal(PostgresErrorCodes.ForeignKeyViolation, postgresException.SqlState);
+        Assert.Equal(constraint, postgresException.ConstraintName);
     }
 
     [Fact]

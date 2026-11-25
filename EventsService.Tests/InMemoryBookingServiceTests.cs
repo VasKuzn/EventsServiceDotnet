@@ -44,10 +44,11 @@ public class InMemoryBookingServiceTests : IDisposable
     {
         // Arrange
         var existingEvent = CreateEvent();
-        await SeedAsync(existingEvent);
+        var user = User.Create("booking-owner", "stored-hash");
+        await SeedAsync(existingEvent, user);
 
         // Act
-        var result = await WithServiceAsync(s => s.CreateBookingAsync(existingEvent.Id, CancellationToken.None));
+        var result = await WithServiceAsync(s => s.CreateBookingAsync(existingEvent.Id, user.Id, CancellationToken.None));
 
         // Assert
         Assert.NotNull(result);
@@ -58,6 +59,7 @@ public class InMemoryBookingServiceTests : IDisposable
 
         var stored = Assert.Single(await LoadBookingsAsync());
         Assert.Equal(result.Id, stored.Id);
+        Assert.Equal(user.Id, stored.UserId);
         Assert.Equal(BookingStatus.Pending, stored.Status);
     }
 
@@ -69,8 +71,8 @@ public class InMemoryBookingServiceTests : IDisposable
         await SeedAsync(existingEvent);
 
         // Act
-        var first = await WithServiceAsync(s => s.CreateBookingAsync(existingEvent.Id, CancellationToken.None));
-        var second = await WithServiceAsync(s => s.CreateBookingAsync(existingEvent.Id, CancellationToken.None));
+        var first = await WithServiceAsync(s => s.CreateBookingAsync(existingEvent.Id, Booking.LegacyOwnerId, CancellationToken.None));
+        var second = await WithServiceAsync(s => s.CreateBookingAsync(existingEvent.Id, Booking.LegacyOwnerId, CancellationToken.None));
 
         // Assert
         Assert.NotEqual(first.Id, second.Id);
@@ -84,7 +86,7 @@ public class InMemoryBookingServiceTests : IDisposable
     {
         // Arrange
         var existingEvent = CreateEvent();
-        var booking = Booking.Create(existingEvent.Id);
+        var booking = Booking.Create(existingEvent.Id, Booking.LegacyOwnerId);
         await SeedAsync(existingEvent, booking);
 
         // Act
@@ -103,7 +105,7 @@ public class InMemoryBookingServiceTests : IDisposable
     {
         // Arrange
         var existingEvent = CreateEvent();
-        var booking = Booking.Create(existingEvent.Id);
+        var booking = Booking.Create(existingEvent.Id, Booking.LegacyOwnerId);
         var processedAt = DateTime.UtcNow;
         booking.Confirm(processedAt);
         await SeedAsync(existingEvent, booking);
@@ -121,7 +123,7 @@ public class InMemoryBookingServiceTests : IDisposable
     {
         // Arrange
         var existingEvent = CreateEvent();
-        var booking = Booking.Create(existingEvent.Id);
+        var booking = Booking.Create(existingEvent.Id, Booking.LegacyOwnerId);
         var processedAt = DateTime.UtcNow;
         booking.Reject(processedAt);
         await SeedAsync(existingEvent, booking);
@@ -139,7 +141,7 @@ public class InMemoryBookingServiceTests : IDisposable
     {
         // Act & Assert
         await Assert.ThrowsAsync<NotFoundException>(
-            () => WithServiceAsync(s => s.CreateBookingAsync(Guid.NewGuid(), CancellationToken.None)));
+            () => WithServiceAsync(s => s.CreateBookingAsync(Guid.NewGuid(), Booking.LegacyOwnerId, CancellationToken.None)));
 
         Assert.Empty(await LoadBookingsAsync());
     }
@@ -160,7 +162,7 @@ public class InMemoryBookingServiceTests : IDisposable
 
         // Act & Assert
         await Assert.ThrowsAsync<NotFoundException>(
-            () => WithServiceAsync(s => s.CreateBookingAsync(existingEvent.Id, CancellationToken.None)));
+            () => WithServiceAsync(s => s.CreateBookingAsync(existingEvent.Id, Booking.LegacyOwnerId, CancellationToken.None)));
 
         Assert.Empty(await LoadBookingsAsync());
     }

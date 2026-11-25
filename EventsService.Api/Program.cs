@@ -1,6 +1,7 @@
 using EventsService.Api.Exceptions;
 using EventsService.Application.Extensions;
 using EventsService.Infrastructure.Extensions;
+using EventsService.Infrastructure.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,6 +12,7 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
 builder.Services.AddApplicationServices();
+builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 builder.Services.AddInfrastructureServices(builder.Configuration);
 
 if (builder.Environment.IsDevelopment())

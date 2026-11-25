@@ -6,9 +6,9 @@ namespace EventsService.Application.Services
 {
     public sealed class BookingService(IBookingRepository bookingRepository) : IBookingService
     {
-        public async Task<BookingResponseDto> CreateBookingAsync(Guid eventId, CancellationToken ct)
+        public async Task<BookingResponseDto> CreateBookingAsync(Guid eventId, Guid userId, CancellationToken ct)
         {
-            var booking = await bookingRepository.CreateBookingWithReservedSeatAsync(eventId, ct);
+            var booking = await bookingRepository.CreateBookingWithReservedSeatAsync(eventId, userId, ct);
             return BookingResponseDto.FromEntity(booking);
         }
 

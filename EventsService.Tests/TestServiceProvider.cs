@@ -29,6 +29,9 @@ public sealed class TestServiceProvider : IDisposable
             ValidateScopes = true,
             ValidateOnBuild = true
         });
+
+        using var scope = _serviceProvider.CreateScope();
+        scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.EnsureCreated();
     }
 
     public IServiceScope CreateScope() => _serviceProvider.CreateScope();

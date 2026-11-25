@@ -196,9 +196,9 @@ public class EventRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(fi
         await SeedAsync(
             eventEntity,
             otherEvent,
-            Booking.Create(eventEntity.Id),
-            Booking.Create(eventEntity.Id),
-            Booking.Create(otherEvent.Id));
+            Booking.Create(eventEntity.Id, Booking.LegacyOwnerId),
+            Booking.Create(eventEntity.Id, Booking.LegacyOwnerId),
+            Booking.Create(otherEvent.Id, Booking.LegacyOwnerId));
         var repository = CreateRepository(out var context);
         await using var _ = context;
 

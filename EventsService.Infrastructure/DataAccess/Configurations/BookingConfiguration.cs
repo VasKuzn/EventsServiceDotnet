@@ -13,12 +13,14 @@ namespace EventsService.Infrastructure.DataAccess.Configurations
 
             builder.Property(b => b.Id).HasColumnName("id").IsRequired().ValueGeneratedNever();
             builder.Property(b => b.EventId).HasColumnName("event_id").IsRequired();
+            builder.Property(b => b.UserId).HasColumnName("user_id").IsRequired();
             builder.Property(b => b.CreatedAt).HasColumnName("created_at").IsRequired();
             builder.Property(b => b.ProcessedAt).HasColumnName("processed_at");
             builder.Property(b => b.Status).HasColumnName("status").IsRequired().HasConversion<string>().HasMaxLength(20);
 
 
             builder.HasOne(b => b.Event).WithMany(e => e.Bookings).HasForeignKey(b => b.EventId).OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne(b => b.User).WithMany().HasForeignKey(b => b.UserId).OnDelete(DeleteBehavior.Restrict);
         }
     }
 }

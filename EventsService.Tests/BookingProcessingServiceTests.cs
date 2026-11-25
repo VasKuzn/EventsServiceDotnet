@@ -31,7 +31,7 @@ public class BookingProcessingServiceTests
     {
         var eventEntity = Event.Create(Guid.NewGuid(), "Conference", null,
             DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2), 10);
-        var booking = Booking.Create(eventEntity.Id);
+        var booking = Booking.Create(eventEntity.Id, Booking.LegacyOwnerId);
         SetUpBooking(booking);
         _eventRepository.Setup(r => r.GetEventAsync(eventEntity.Id, CancellationToken.None))
             .ReturnsAsync(eventEntity);
@@ -65,7 +65,7 @@ public class BookingProcessingServiceTests
     [InlineData(BookingStatus.Rejected)]
     public async Task ProcessBookingAsync_AlreadyProcessedBooking_DoesNotProcessAgain(BookingStatus status)
     {
-        var booking = Booking.Create(Guid.NewGuid());
+        var booking = Booking.Create(Guid.NewGuid(), Booking.LegacyOwnerId);
         if (status == BookingStatus.Confirmed)
             booking.Confirm(DateTime.UtcNow);
         else
@@ -83,7 +83,7 @@ public class BookingProcessingServiceTests
     [Fact]
     public async Task ProcessBookingAsync_MissingEvent_RejectsBookingWithoutReleasingSeats()
     {
-        var booking = Booking.Create(Guid.NewGuid());
+        var booking = Booking.Create(Guid.NewGuid(), Booking.LegacyOwnerId);
         SetUpBooking(booking);
         _eventRepository.Setup(r => r.GetEventAsync(booking.EventId, CancellationToken.None))
             .ReturnsAsync((Event?)null);
@@ -101,7 +101,7 @@ public class BookingProcessingServiceTests
     [Fact]
     public async Task ProcessBookingAsync_ProcessingFailure_RejectsBookingAndReleasesSeats()
     {
-        var booking = Booking.Create(Guid.NewGuid());
+        var booking = Booking.Create(Guid.NewGuid(), Booking.LegacyOwnerId);
         SetUpBooking(booking);
         _eventRepository.Setup(r => r.GetEventAsync(booking.EventId, CancellationToken.None))
             .ThrowsAsync(new InvalidOperationException("Event lookup failed"));
@@ -123,7 +123,7 @@ public class BookingProcessingServiceTests
     [Fact]
     public async Task ProcessBookingAsync_Cancellation_DoesNotRejectBookingOrReleaseSeats()
     {
-        var booking = Booking.Create(Guid.NewGuid());
+        var booking = Booking.Create(Guid.NewGuid(), Booking.LegacyOwnerId);
         SetUpBooking(booking);
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
@@ -143,7 +143,7 @@ public class BookingProcessingServiceTests
     {
         var eventEntity = Event.Create(Guid.NewGuid(), "Conference", null,
             DateTime.UtcNow.AddDays(1), DateTime.UtcNow.AddDays(2), 10);
-        var booking = Booking.Create(eventEntity.Id);
+        var booking = Booking.Create(eventEntity.Id, Booking.LegacyOwnerId);
         SetUpBooking(booking);
         _eventRepository.Setup(r => r.GetEventAsync(eventEntity.Id, CancellationToken.None))
             .ReturnsAsync(eventEntity);

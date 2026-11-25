@@ -1,5 +1,6 @@
 using EventsService.Application.DataTransferObjects.Bookings;
 using EventsService.Application.Interfaces.Bookings;
+using EventsService.Domain.Models;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EventsService.Api.Controllers
@@ -22,7 +23,7 @@ namespace EventsService.Api.Controllers
         [ProducesResponseType(StatusCodes.Status409Conflict)]
         public async Task<IActionResult> CreateBooking(Guid eventId, CancellationToken cancellationToken)
         {
-            var booking = await bookingService.CreateBookingAsync(eventId, cancellationToken);
+            var booking = await bookingService.CreateBookingAsync(eventId, Booking.LegacyOwnerId, cancellationToken);
 
             return AcceptedAtAction(
                 nameof(GetBookingById),

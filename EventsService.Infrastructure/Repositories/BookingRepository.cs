@@ -18,7 +18,7 @@ namespace EventsService.Infrastructure.Repositories
             return bookingEntity;
         }
 
-        public async Task<Booking> CreateBookingWithReservedSeatAsync(Guid eventId, CancellationToken ct)
+        public async Task<Booking> CreateBookingWithReservedSeatAsync(Guid eventId, Guid userId, CancellationToken ct)
         {
             while (true)
             {
@@ -31,7 +31,7 @@ namespace EventsService.Infrastructure.Repositories
                     throw new NoAvailableSeatsException();
                 }
 
-                var booking = dbContext.Bookings.Add(Booking.Create(eventId));
+                var booking = dbContext.Bookings.Add(Booking.Create(eventId, userId));
                 try
                 {
                     await dbContext.SaveChangesAsync(ct);

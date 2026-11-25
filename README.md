@@ -63,6 +63,8 @@ $env:ConnectionStrings__DefaultConnection = "Host=myhost;Port=5432;Database=Even
 
 Между таблицами настроен внешний ключ `bookings.event_id → events.id` с каскадным удалением (при удалении события удаляются его брони) и индекс по `bookings.event_id`.
 
+Миграция `AddUsersAndBookingOwner` добавляет таблицу `users` с уникальным логином и обязательную связь `bookings.user_id → users.id`. Старые брони получают технического владельца без возможности входа. До подключения JWT этот же владелец используется при создании брони через текущий API.
+
 Новая миграция после изменения сущностей (из корня репозитория, где лежит `EventsService.slnx`):
 
 ```powershell
@@ -70,6 +72,20 @@ dotnet ef migrations add <ИмяМиграции> --project EventsService.Infras
 ```
 
 Для команд `dotnet ef` нужен инструмент `dotnet-ef` (`dotnet tool install --global dotnet-ef`) версии, совпадающей с версией EF Core в проекте.
+
+### Параметры JWT
+
+Генератор читает секцию `Jwt` из `EventsService.Api/appsettings.json`. В ней заданы издатель (`Issuer`), аудитория (`Audience`) и срок действия (`LifetimeMinutes`). Для подписи передайте секрет длиной от 32 байт через переменную окружения `Jwt__Secret`.
+
+Сгенерируйте секрет в PowerShell и запустите API из того же терминала.
+
+```powershell
+$jwtKey = New-Object byte[] 32
+$jwtRng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$jwtRng.GetBytes($jwtKey)
+$jwtRng.Dispose()
+$env:Jwt__Secret = [Convert]::ToBase64String($jwtKey)
+```
 
 ## Запуск (в папке EventsService)
 
@@ -190,6 +206,7 @@ dotnet run --project EventsService.Api
 | `Pending`   | 0        | бронь создана, ожидает фоновой обработки         |
 | `Confirmed` | 1        | бронь подтверждена (обработка прошла без ошибок) |
 | `Rejected`  | 2        | бронь отклонена (при обработке возникла ошибка)  |
+| `Cancelled` | 3        | бронь отменена                                   |
 
 Данные о бронированиях и событиях хранятся в PostgreSQL (таблицы `bookings` и `events`) и сохраняются между перезапусками приложения. Вся работа с `AppDbContext` инкапсулирована в репозиториях `EventRepository` и `BookingRepository` (`EventsService.Infrastructure/Repositories`, интерфейсы `IEventRepository` и `IBookingRepository` - в Application), сервисы обращаются к данным только через них. Репозитории зарегистрированы как `Scoped`. Фильтрация и пагинация списка событий выполняются на стороне БД в `EventRepository.GetEventsAsync` (сортировка по `StartAt`, затем по `Id`, чтобы страницы не пересекались).
 
@@ -368,7 +385,7 @@ dotnet test EventsService.IntegrationTests/EventsService.IntegrationTests.csproj
 
 Что покрыто:
 
-- `MigrationTests` - применение миграций `InitialCreate` и `UseEventRowVersion`, повторный `Migrate()`, соответствие миграций модели, структура таблиц, ключи, индекс по `event_id` и проверка внешнего ключа;
+- `MigrationTests` - применение миграций, перенос старых броней на технического владельца, повторный `Migrate()`, соответствие миграций модели, структура таблиц, индексы и внешние ключи;
 - `EventRepositoryTests` - все методы `EventRepository`: создание (в том числе дубликат Id), получение по Id, обновление существующего/несуществующего события, удаление (в том числе каскадное удаление броней), список событий: все варианты фильтров (`title` - регистр, подстрока, пустое значение, спецсимволы `%` и `_`; `from`/`to` - включительные границы; комбинации фильтров; пустой результат) и пагинация (страницы не пересекаются, последняя неполная страница, страница за пределами данных, `totalCount` с учётом фильтра, стабильный порядок);
 - `BookingRepositoryTests` - создание и получение брони, выборка `Pending`-броней, обновление статуса, параллельное бронирование до исчерпания мест, повтор при конкурентном возврате места и откат списания при ошибке вставки.
 
