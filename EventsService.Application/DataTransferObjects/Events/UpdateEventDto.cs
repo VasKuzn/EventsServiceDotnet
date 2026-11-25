@@ -11,10 +11,10 @@ namespace EventsService.Application.DataTransferObjects.Events
         public string? Description { get; init; }
 
         [Required(ErrorMessage = "Значение начального времени события обязательно для заполнения")]
-        public required DateTime StartAt { get; init; }
+        public required DateTimeOffset StartAt { get; init; }
 
         [Required(ErrorMessage = "Значение завершающего времени события обязательно для заполнения")]
-        public required DateTime EndAt { get; init; }
+        public required DateTimeOffset EndAt { get; init; }
 
         [Required(ErrorMessage = "Значение общего количества мест события обязательно для заполнения")]
         public int? TotalSeats { get; init; }
@@ -27,7 +27,7 @@ namespace EventsService.Application.DataTransferObjects.Events
                     "EndAt должен быть позже StartAt",
                     new[] { nameof(EndAt) });
             }
-            if (StartAt < DateTime.UtcNow)
+            if (StartAt < DateTimeOffset.UtcNow)
             {
                 yield return new ValidationResult(
                     "StartAt не может быть в прошлом",
@@ -41,6 +41,6 @@ namespace EventsService.Application.DataTransferObjects.Events
             }
         }
 
-        public Event ToEntity(Guid id) => Event.Create(id, Title, Description, StartAt, EndAt, TotalSeats.GetValueOrDefault());
+        public Event ToEntity(Guid id) => Event.Create(id, Title, Description, StartAt.UtcDateTime, EndAt.UtcDateTime, TotalSeats.GetValueOrDefault());
     }
 }

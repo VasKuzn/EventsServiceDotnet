@@ -1,3 +1,4 @@
+using EventsService.Application.Interfaces.Auth;
 using EventsService.Application.Interfaces.Bookings;
 using EventsService.Application.Interfaces.Events;
 using EventsService.Application.Services;
@@ -10,6 +11,7 @@ namespace EventsService.Application.Extensions
         public static IServiceCollection AddApplicationServices(this IServiceCollection services)
         {
             services.AddScoped<IEventService, EventService>();
+            services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IBookingService, BookingService>();
             services.AddScoped<IBookingProcessingService, BookingProcessingService>();
             return services;

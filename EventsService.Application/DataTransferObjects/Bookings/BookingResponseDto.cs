@@ -9,6 +9,8 @@ namespace EventsService.Application.DataTransferObjects.Bookings
 
         public Guid EventId { get; private set; }
 
+        public Guid UserId { get; private set; }
+
         public BookingStatus Status { get; private set; }
 
         public DateTime CreatedAt { get; private set; }
@@ -19,6 +21,7 @@ namespace EventsService.Application.DataTransferObjects.Bookings
         {
             Id = entity.Id,
             EventId = entity.EventId,
+            UserId = entity.UserId,
             Status = entity.Status,
             CreatedAt = entity.CreatedAt,
             ProcessedAt = entity.ProcessedAt

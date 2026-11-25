@@ -51,11 +51,13 @@ namespace EventsService.Api.Exceptions
         private static (int StatusCode, string Title, string Type) MapException(Exception ex)
         => ex switch
         {
-            ValidationException => (StatusCodes.Status400BadRequest, "Bad Request",
+            ValidationException or EventAlreadyStartedException => (StatusCodes.Status400BadRequest, "Bad Request",
                 "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.1"),
+            ForbiddenException => (StatusCodes.Status403Forbidden, "Forbidden",
+                "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.4"),
             NotFoundException => (StatusCodes.Status404NotFound, "Not Found",
                 "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.5"),
-            NoAvailableSeatsException or BookingStateException => (StatusCodes.Status409Conflict, "Conflict",
+            NoAvailableSeatsException or BookingStateException or ActiveBookingLimitExceededException => (StatusCodes.Status409Conflict, "Conflict",
                 "https://www.rfc-editor.org/rfc/rfc9110#section-15.5.10"),
             _ => (StatusCodes.Status500InternalServerError, "Internal Server Error",
                 "https://www.rfc-editor.org/rfc/rfc9110#section-15.6.1")

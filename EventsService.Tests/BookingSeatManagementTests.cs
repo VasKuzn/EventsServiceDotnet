@@ -43,7 +43,7 @@ public class BookingSeatManagementTests : IDisposable
     {
         using var scope = _serviceProvider.CreateScope();
         var bookingService = scope.ServiceProvider.GetRequiredService<IBookingService>();
-        return await bookingService.CreateBookingAsync(eventId, CancellationToken.None);
+        return await bookingService.CreateBookingAsync(eventId, Booking.LegacyOwnerId, CancellationToken.None);
     }
 
     // Отклоняет бронь и возвращает место - то же самое делает фоновый сервис при ошибке обработки.
@@ -124,7 +124,7 @@ public class BookingSeatManagementTests : IDisposable
     [Fact]
     public void Confirm_PendingBooking_SetsConfirmedStatusAndProcessedAt()
     {
-        var booking = Booking.Create(Guid.NewGuid());
+        var booking = Booking.Create(Guid.NewGuid(), Booking.LegacyOwnerId);
         var processedAt = DateTime.UtcNow;
 
         booking.Confirm(processedAt);
@@ -136,7 +136,7 @@ public class BookingSeatManagementTests : IDisposable
     [Fact]
     public void Reject_PendingBooking_SetsRejectedStatusAndProcessedAt()
     {
-        var booking = Booking.Create(Guid.NewGuid());
+        var booking = Booking.Create(Guid.NewGuid(), Booking.LegacyOwnerId);
         var processedAt = DateTime.UtcNow;
 
         booking.Reject(processedAt);
@@ -148,11 +148,37 @@ public class BookingSeatManagementTests : IDisposable
     [Fact]
     public void ConfirmAndReject_ProcessedBooking_ThrowBookingStateException()
     {
-        var booking = Booking.Create(Guid.NewGuid());
+        var booking = Booking.Create(Guid.NewGuid(), Booking.LegacyOwnerId);
         booking.Confirm(DateTime.UtcNow);
 
         Assert.Throws<BookingStateException>(() => booking.Confirm(DateTime.UtcNow));
         Assert.Throws<BookingStateException>(() => booking.Reject(DateTime.UtcNow));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Cancel_ActiveBooking_SetsCancelledAndRejectsRepeat(bool confirmed)
+    {
+        var booking = Booking.Create(Guid.NewGuid(), Booking.LegacyOwnerId);
+        if (confirmed)
+            booking.Confirm(DateTime.UtcNow);
+
+        var cancelledAt = DateTime.UtcNow;
+        booking.Cancel(cancelledAt);
+
+        Assert.Equal(BookingStatus.Cancelled, booking.Status);
+        Assert.Throws<BookingStateException>(() => booking.Cancel(cancelledAt.AddSeconds(1)));
+        Assert.Equal(cancelledAt, booking.ProcessedAt);
+    }
+
+    [Fact]
+    public void Cancel_RejectedBooking_ThrowsBookingStateException()
+    {
+        var booking = Booking.Create(Guid.NewGuid(), Booking.LegacyOwnerId);
+        booking.Reject(DateTime.UtcNow);
+
+        Assert.Throws<BookingStateException>(() => booking.Cancel(DateTime.UtcNow));
     }
 
     [Fact]
@@ -169,7 +195,7 @@ public class BookingSeatManagementTests : IDisposable
 
         using var scope = _serviceProvider.CreateScope();
         var bookingService = scope.ServiceProvider.GetRequiredService<IBookingService>();
-        var stored = await bookingService.GetBookingByIdAsync(bookingDto.Id, CancellationToken.None);
+        var stored = await bookingService.GetBookingByIdAsync(bookingDto.Id, Booking.LegacyOwnerId, CancellationToken.None);
         Assert.Equal(BookingStatus.Rejected, stored.Status);
         Assert.NotNull(stored.ProcessedAt);
     }

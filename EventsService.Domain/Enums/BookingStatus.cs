@@ -4,6 +4,7 @@ namespace EventsService.Domain.Enums
     {
         Pending,
         Confirmed,
-        Rejected
+        Rejected,
+        Cancelled
     }
 }

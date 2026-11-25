@@ -1,5 +1,7 @@
 using EventsService.Application.DataTransferObjects.Events;
 using EventsService.Application.Interfaces.Events;
+using EventsService.Domain.Enums;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EventsService.Api.Controllers
@@ -26,16 +28,22 @@ namespace EventsService.Api.Controllers
             return Ok(eventToFind);
         }
         [HttpPost]
+        [Authorize(Roles = nameof(UserRole.Admin))]
         [ProducesResponseType(typeof(EventResponseDto), StatusCodes.Status201Created)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
         public async Task<IActionResult> CreateEvent([FromBody] CreateEventDto newEvent, CancellationToken cancellationToken)
         {
             var createdEvent = await eventService.CreateEventAsync(newEvent, cancellationToken);
             return CreatedAtAction(nameof(GetEventById), new { id = createdEvent.Id }, createdEvent);
         }
         [HttpPut("{id}")]
+        [Authorize(Roles = nameof(UserRole.Admin))]
         [ProducesResponseType(typeof(EventResponseDto), StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
         public async Task<IActionResult> UpdateEvent(Guid id, [FromBody] UpdateEventDto updatedEvent, CancellationToken cancellationToken)
         {
@@ -43,8 +51,11 @@ namespace EventsService.Api.Controllers
             return Ok(eventToUpdate);
         }
         [HttpDelete("{id}")]
+        [Authorize(Roles = nameof(UserRole.Admin))]
         [ProducesResponseType(StatusCodes.Status204NoContent)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
         [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
         public async Task<IActionResult> DeleteEvent(Guid id, CancellationToken cancellationToken)
         {

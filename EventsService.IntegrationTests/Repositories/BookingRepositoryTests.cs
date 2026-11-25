@@ -26,8 +26,9 @@ public class BookingRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(
     {
         // Arrange
         var eventEntity = TestData.CreateEvent();
-        await SeedAsync(eventEntity);
-        var booking = Booking.Create(eventEntity.Id);
+        var user = User.Create("booking-owner", "stored-hash", UserRole.Admin);
+        await SeedAsync(eventEntity, user);
+        var booking = Booking.Create(eventEntity.Id, user.Id);
         var repository = CreateRepository(out var context);
         await using var _ = context;
 
@@ -37,9 +38,13 @@ public class BookingRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(
         // Assert
         Assert.Equal(booking.Id, created.Id);
         await using var readContext = CreateContext();
-        var stored = await readContext.Bookings.SingleAsync();
+        var stored = await readContext.Bookings.Include(b => b.User).SingleAsync();
         Assert.Equal(booking.Id, stored.Id);
         Assert.Equal(eventEntity.Id, stored.EventId);
+        Assert.Equal(user.Id, stored.UserId);
+        Assert.Equal(user.Login, stored.User.Login);
+        Assert.Equal(user.PasswordHash, stored.User.PasswordHash);
+        Assert.Equal(UserRole.Admin, stored.User.Role);
         Assert.Equal(BookingStatus.Pending, stored.Status);
         Assert.Equal(booking.CreatedAt, stored.CreatedAt, TimeSpan.FromMilliseconds(1));
         Assert.Null(stored.ProcessedAt);
@@ -49,7 +54,7 @@ public class BookingRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(
     public async Task CreateBookingAsync_UnknownEvent_ThrowsDbUpdateExceptionAndStoresNothing()
     {
         // Arrange
-        var booking = Booking.Create(Guid.NewGuid());
+        var booking = Booking.Create(Guid.NewGuid(), Booking.LegacyOwnerId);
         var repository = CreateRepository(out var context);
         await using var _ = context;
 
@@ -76,7 +81,7 @@ public class BookingRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(
             try
             {
                 var service = new BookingService(new BookingRepository(context));
-                return (Guid?)(await service.CreateBookingAsync(eventEntity.Id, Ct)).Id;
+                return (Guid?)(await service.CreateBookingAsync(eventEntity.Id, Booking.LegacyOwnerId, Ct)).Id;
             }
             catch (NoAvailableSeatsException)
             {
@@ -107,7 +112,7 @@ public class BookingRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(
         await eventRepository.UpdateEventAsync(releasedEvent, Ct);
 
         var service = new BookingService(new BookingRepository(bookingContext));
-        await service.CreateBookingAsync(eventEntity.Id, Ct);
+        await service.CreateBookingAsync(eventEntity.Id, Booking.LegacyOwnerId, Ct);
 
         await using var readContext = CreateContext();
         Assert.Equal(2, (await readContext.Events.SingleAsync()).AvailableSeats);
@@ -123,11 +128,37 @@ public class BookingRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(
         await context.Database.ExecuteSqlRawAsync("ALTER TABLE bookings ADD CONSTRAINT reject_test_insert CHECK (false)");
 
         var service = new BookingService(new BookingRepository(context));
-        await Assert.ThrowsAsync<DbUpdateException>(() => service.CreateBookingAsync(eventEntity.Id, Ct));
+        await Assert.ThrowsAsync<DbUpdateException>(() => service.CreateBookingAsync(eventEntity.Id, Booking.LegacyOwnerId, Ct));
 
         await using var readContext = CreateContext();
         Assert.Equal(1, (await readContext.Events.SingleAsync()).AvailableSeats);
         Assert.Equal(0, await readContext.Bookings.CountAsync());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancelBookingAsync_ConcurrentConfirmationCannotOverwriteCancellation(bool detached)
+    {
+        var eventEntity = TestData.CreateEvent(totalSeats: 1);
+        await SeedAsync(eventEntity);
+        await using var bookingContext = CreateContext();
+        var service = new BookingService(new BookingRepository(bookingContext));
+        var booking = await service.CreateBookingAsync(eventEntity.Id, Booking.LegacyOwnerId, Ct);
+
+        await using var processingContext = CreateContext();
+        var processingRepository = new BookingRepository(processingContext);
+        var pendingBooking = (await processingRepository.GetBookingAsync(booking.Id, Ct))!;
+
+        await service.CancelBookingAsync(booking.Id, Booking.LegacyOwnerId, UserRole.User, Ct);
+        pendingBooking.Confirm(DateTime.UtcNow);
+        await using var updateContext = CreateContext();
+        var updateRepository = detached ? new BookingRepository(updateContext) : processingRepository;
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => updateRepository.UpdateBookingAsync(pendingBooking, Ct));
+
+        await using var readContext = CreateContext();
+        Assert.Equal(BookingStatus.Cancelled, (await readContext.Bookings.SingleAsync()).Status);
+        Assert.Equal(1, (await readContext.Events.SingleAsync()).AvailableSeats);
     }
 
     // ---------- GetBookingAsync ----------
@@ -137,8 +168,8 @@ public class BookingRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(
     {
         // Arrange
         var eventEntity = TestData.CreateEvent();
-        var booking = Booking.Create(eventEntity.Id);
-        await SeedAsync(eventEntity, booking, Booking.Create(eventEntity.Id));
+        var booking = Booking.Create(eventEntity.Id, Booking.LegacyOwnerId);
+        await SeedAsync(eventEntity, booking, Booking.Create(eventEntity.Id, Booking.LegacyOwnerId));
         var repository = CreateRepository(out var context);
         await using var _ = context;
 
@@ -157,7 +188,7 @@ public class BookingRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(
     {
         // Arrange
         var eventEntity = TestData.CreateEvent();
-        await SeedAsync(eventEntity, Booking.Create(eventEntity.Id));
+        await SeedAsync(eventEntity, Booking.Create(eventEntity.Id, Booking.LegacyOwnerId));
         var repository = CreateRepository(out var context);
         await using var _ = context;
 
@@ -175,13 +206,15 @@ public class BookingRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(
     {
         // Arrange
         var eventEntity = TestData.CreateEvent();
-        var pending1 = Booking.Create(eventEntity.Id);
-        var pending2 = Booking.Create(eventEntity.Id);
-        var confirmed = Booking.Create(eventEntity.Id);
+        var pending1 = Booking.Create(eventEntity.Id, Booking.LegacyOwnerId);
+        var pending2 = Booking.Create(eventEntity.Id, Booking.LegacyOwnerId);
+        var confirmed = Booking.Create(eventEntity.Id, Booking.LegacyOwnerId);
         confirmed.Confirm(DateTime.UtcNow);
-        var rejected = Booking.Create(eventEntity.Id);
+        var rejected = Booking.Create(eventEntity.Id, Booking.LegacyOwnerId);
         rejected.Reject(DateTime.UtcNow);
-        await SeedAsync(eventEntity, pending1, pending2, confirmed, rejected);
+        var cancelled = Booking.Create(eventEntity.Id, Booking.LegacyOwnerId);
+        cancelled.Cancel(DateTime.UtcNow);
+        await SeedAsync(eventEntity, pending1, pending2, confirmed, rejected, cancelled);
         var repository = CreateRepository(out var context);
         await using var _ = context;
 
@@ -199,7 +232,7 @@ public class BookingRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(
     {
         // Arrange
         var eventEntity = TestData.CreateEvent();
-        var confirmed = Booking.Create(eventEntity.Id);
+        var confirmed = Booking.Create(eventEntity.Id, Booking.LegacyOwnerId);
         confirmed.Confirm(DateTime.UtcNow);
         await SeedAsync(eventEntity, confirmed);
         var repository = CreateRepository(out var context);
@@ -233,8 +266,8 @@ public class BookingRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(
     {
         // Arrange
         var eventEntity = TestData.CreateEvent();
-        var booking = Booking.Create(eventEntity.Id);
-        var other = Booking.Create(eventEntity.Id);
+        var booking = Booking.Create(eventEntity.Id, Booking.LegacyOwnerId);
+        var other = Booking.Create(eventEntity.Id, Booking.LegacyOwnerId);
         await SeedAsync(eventEntity, booking, other);
         var processedAt = new DateTime(2030, 5, 5, 12, 0, 0, DateTimeKind.Utc);
 
@@ -261,7 +294,7 @@ public class BookingRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(
     {
         // Arrange
         var eventEntity = TestData.CreateEvent();
-        var booking = Booking.Create(eventEntity.Id);
+        var booking = Booking.Create(eventEntity.Id, Booking.LegacyOwnerId);
         await SeedAsync(eventEntity, booking);
 
         await using var loadContext = CreateContext();
