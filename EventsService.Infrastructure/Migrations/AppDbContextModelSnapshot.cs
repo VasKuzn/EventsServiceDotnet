@@ -41,6 +41,7 @@ namespace EventsService.Infrastructure.Migrations
                         .HasColumnName("processed_at");
 
                     b.Property<string>("Status")
+                        .IsConcurrencyToken()
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
@@ -54,7 +55,7 @@ namespace EventsService.Infrastructure.Migrations
 
                     b.HasIndex("EventId");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("UserId", "Status");
 
                     b.ToTable("bookings", (string)null);
                 });

@@ -55,7 +55,8 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
         Assert.Collection(applied,
             migration => Assert.EndsWith("InitialCreate", migration),
             migration => Assert.EndsWith("UseEventRowVersion", migration),
-            migration => Assert.EndsWith("AddUsersAndBookingOwner", migration));
+            migration => Assert.EndsWith("AddUsersAndBookingOwner", migration),
+            migration => Assert.EndsWith("AddActiveBookingIndex", migration));
         Assert.Empty(pending);
     }
 
@@ -207,7 +208,7 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
     }
 
     [Fact]
-    public async Task Schema_Bookings_HasIndexesOnEventIdAndUserId()
+    public async Task Schema_Bookings_HasIndexesForEventsAndActiveBookingCounts()
     {
         // Act
         var indexedColumns = await QueryAsync(
@@ -221,7 +222,7 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
             r => r.GetString(0));
 
         // Assert
-        Assert.Equivalent(new[] { "event_id", "user_id" }, indexedColumns, strict: true);
+        Assert.Equivalent(new[] { "event_id", "user_id", "status" }, indexedColumns, strict: true);
     }
 
     [Theory]

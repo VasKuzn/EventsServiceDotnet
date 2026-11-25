@@ -195,7 +195,7 @@ public class BookingSeatManagementTests : IDisposable
 
         using var scope = _serviceProvider.CreateScope();
         var bookingService = scope.ServiceProvider.GetRequiredService<IBookingService>();
-        var stored = await bookingService.GetBookingByIdAsync(bookingDto.Id, CancellationToken.None);
+        var stored = await bookingService.GetBookingByIdAsync(bookingDto.Id, Booking.LegacyOwnerId, CancellationToken.None);
         Assert.Equal(BookingStatus.Rejected, stored.Status);
         Assert.NotNull(stored.ProcessedAt);
     }

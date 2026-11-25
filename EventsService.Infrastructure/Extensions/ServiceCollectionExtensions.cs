@@ -19,17 +19,19 @@ namespace EventsService.Infrastructure.Extensions
             services.AddDbContext<AppDbContext>(options =>
                 options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
             services.AddInfrastructureAdapters();
-            services.AddSingleton<IPasswordHasher, Sha256PasswordHasher>();
-            services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
             services.AddHostedService<BookingProcessingBackgroundService>();
             return services;
         }
 
         public static IServiceCollection AddInfrastructureAdapters(this IServiceCollection services)
         {
+            services.AddOptions();
             services.AddScoped<IEventRepository, EventRepository>();
             services.AddScoped<IBookingRepository, BookingRepository>();
+            services.AddScoped<IUserRepository, UserRepository>();
             services.AddScoped<IEventSeatReleaser, EventSeatReleaser>();
+            services.AddSingleton<IPasswordHasher, Sha256PasswordHasher>();
+            services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
             return services;
         }
     }

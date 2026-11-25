@@ -74,7 +74,8 @@ namespace EventsService.Infrastructure.Repositories
                 return null;
             }
 
-            dbContext.Entry(existingEvent).CurrentValues.SetValues(eventEntity);
+            if (!ReferenceEquals(existingEvent, eventEntity))
+                existingEvent.UpdateDetails(eventEntity);
 
             await dbContext.SaveChangesAsync(ct);
 

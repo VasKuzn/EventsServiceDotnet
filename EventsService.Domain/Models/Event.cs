@@ -41,6 +41,20 @@ namespace EventsService.Domain.Models
             return new Event(id, title, description, startAt, endAt, totalSeats);
         }
 
+        public void UpdateDetails(Event updatedEvent)
+        {
+            var reservedSeats = TotalSeats - AvailableSeats;
+            if (updatedEvent.TotalSeats < reservedSeats)
+                throw new ValidationException("Total seats cannot be less than the number of reserved seats.", nameof(TotalSeats));
+
+            Title = updatedEvent.Title;
+            Description = updatedEvent.Description;
+            StartAt = updatedEvent.StartAt;
+            EndAt = updatedEvent.EndAt;
+            TotalSeats = updatedEvent.TotalSeats;
+            AvailableSeats = TotalSeats - reservedSeats;
+        }
+
         private static void ThrowIfNotValid(string title, DateTime startAt, DateTime endAt, int totalSeats)
         {
             if (string.IsNullOrWhiteSpace(title))

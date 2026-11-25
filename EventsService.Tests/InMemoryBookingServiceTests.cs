@@ -90,7 +90,7 @@ public class InMemoryBookingServiceTests : IDisposable
         await SeedAsync(existingEvent, booking);
 
         // Act
-        var result = await WithServiceAsync(s => s.GetBookingByIdAsync(booking.Id, CancellationToken.None));
+        var result = await WithServiceAsync(s => s.GetBookingByIdAsync(booking.Id, Booking.LegacyOwnerId, CancellationToken.None));
 
         // Assert
         Assert.Equal(booking.Id, result.Id);
@@ -111,7 +111,7 @@ public class InMemoryBookingServiceTests : IDisposable
         await SeedAsync(existingEvent, booking);
 
         // Act
-        var result = await WithServiceAsync(s => s.GetBookingByIdAsync(booking.Id, CancellationToken.None));
+        var result = await WithServiceAsync(s => s.GetBookingByIdAsync(booking.Id, Booking.LegacyOwnerId, CancellationToken.None));
 
         // Assert
         Assert.Equal(BookingStatus.Confirmed, result.Status);
@@ -129,7 +129,7 @@ public class InMemoryBookingServiceTests : IDisposable
         await SeedAsync(existingEvent, booking);
 
         // Act
-        var result = await WithServiceAsync(s => s.GetBookingByIdAsync(booking.Id, CancellationToken.None));
+        var result = await WithServiceAsync(s => s.GetBookingByIdAsync(booking.Id, Booking.LegacyOwnerId, CancellationToken.None));
 
         // Assert
         Assert.Equal(BookingStatus.Rejected, result.Status);
@@ -171,6 +171,6 @@ public class InMemoryBookingServiceTests : IDisposable
     public async Task GetBookingByIdAsync_NonExistingId_ThrowsNotFoundException()
     {
         await Assert.ThrowsAsync<NotFoundException>(
-            () => WithServiceAsync(s => s.GetBookingByIdAsync(Guid.NewGuid(), CancellationToken.None)));
+            () => WithServiceAsync(s => s.GetBookingByIdAsync(Guid.NewGuid(), Booking.LegacyOwnerId, CancellationToken.None)));
     }
 }

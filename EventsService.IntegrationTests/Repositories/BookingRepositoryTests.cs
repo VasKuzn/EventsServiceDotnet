@@ -135,6 +135,32 @@ public class BookingRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(
         Assert.Equal(0, await readContext.Bookings.CountAsync());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancelBookingAsync_ConcurrentConfirmationCannotOverwriteCancellation(bool detached)
+    {
+        var eventEntity = TestData.CreateEvent(totalSeats: 1);
+        await SeedAsync(eventEntity);
+        await using var bookingContext = CreateContext();
+        var service = new BookingService(new BookingRepository(bookingContext));
+        var booking = await service.CreateBookingAsync(eventEntity.Id, Booking.LegacyOwnerId, Ct);
+
+        await using var processingContext = CreateContext();
+        var processingRepository = new BookingRepository(processingContext);
+        var pendingBooking = (await processingRepository.GetBookingAsync(booking.Id, Ct))!;
+
+        await service.CancelBookingAsync(booking.Id, Booking.LegacyOwnerId, UserRole.User, Ct);
+        pendingBooking.Confirm(DateTime.UtcNow);
+        await using var updateContext = CreateContext();
+        var updateRepository = detached ? new BookingRepository(updateContext) : processingRepository;
+        await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() => updateRepository.UpdateBookingAsync(pendingBooking, Ct));
+
+        await using var readContext = CreateContext();
+        Assert.Equal(BookingStatus.Cancelled, (await readContext.Bookings.SingleAsync()).Status);
+        Assert.Equal(1, (await readContext.Events.SingleAsync()).AvailableSeats);
+    }
+
     // ---------- GetBookingAsync ----------
 
     [Fact]

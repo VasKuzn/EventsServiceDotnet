@@ -63,7 +63,7 @@ $env:ConnectionStrings__DefaultConnection = "Host=myhost;Port=5432;Database=Even
 
 Между таблицами настроен внешний ключ `bookings.event_id → events.id` с каскадным удалением (при удалении события удаляются его брони) и индекс по `bookings.event_id`.
 
-Миграция `AddUsersAndBookingOwner` добавляет таблицу `users` с уникальным логином и обязательную связь `bookings.user_id → users.id`. Старые брони получают технического владельца без возможности входа. До подключения JWT этот же владелец используется при создании брони через текущий API.
+Миграция `AddUsersAndBookingOwner` добавляет таблицу `users` с уникальным логином и обязательную связь `bookings.user_id → users.id`. Старые брони получают технического владельца без возможности входа. Миграция `AddActiveBookingIndex` добавляет индекс по владельцу и статусу для подсчёта активных броней.
 
 Новая миграция после изменения сущностей (из корня репозитория, где лежит `EventsService.slnx`):
 
@@ -75,7 +75,7 @@ dotnet ef migrations add <ИмяМиграции> --project EventsService.Infras
 
 ### Параметры JWT
 
-Генератор читает секцию `Jwt` из `EventsService.Api/appsettings.json`. В ней заданы издатель (`Issuer`), аудитория (`Audience`) и срок действия (`LifetimeMinutes`). Для подписи передайте секрет длиной от 32 байт через переменную окружения `Jwt__Secret`.
+API читает секцию `Jwt` из `EventsService.Api/appsettings.json`. В ней заданы издатель (`Issuer`), аудитория (`Audience`) и срок действия (`LifetimeMinutes`). Для запуска передайте ключ подписи длиной от 32 байт через переменную окружения `Jwt__Secret`.
 
 Сгенерируйте секрет в PowerShell и запустите API из того же терминала.
 
@@ -99,6 +99,12 @@ dotnet run --project EventsService.Api
 
 После запуска Swagger UI доступен по адресу, указанному в консоли - `http://localhost:5000/swagger`.
 
+## Аутентификация
+
+- `POST /auth/register` принимает `login`, `password` и необязательное поле `role`. По умолчанию используется `User`, для тестирования можно указать `Admin`. Успешная регистрация возвращает `204`, ошибка валидации или занятый логин — `400`.
+- `POST /auth/login` принимает `login` и `password`. Успешный вход возвращает `200` и объект `{ "token": "..." }`, неверные учётные данные — `400`.
+- Для защищённых запросов передавайте `Authorization: Bearer <token>` или введите токен через **Authorize** в Swagger. Без действующего токена API возвращает `401`.
+
 ## API
 
 Базовый путь: `/events`
@@ -110,6 +116,8 @@ dotnet run --project EventsService.Api
 | POST   | `/events`      | Создать событие                           | 201   | —          |
 | PUT    | `/events/{id}` | Обновить событие целиком                  | 200   | 404        |
 | DELETE | `/events/{id}` | Удалить событие                           | 204   | 404        |
+
+Чтение событий доступно без токена. Создание, редактирование и удаление требуют роли `Admin`. Запрос с токеном обычного пользователя возвращает `403`.
 
 ### Параметры фильтрации `GET /events`
 
@@ -172,15 +180,20 @@ dotnet run --project EventsService.Api
 
 Бронь создаётся так: `POST` синхронно и атомарно резервирует место у события (`AvailableSeats -= 1`) и мгновенно создаёт бронь в статусе `Pending`, возвращая `202 Accepted`. Фактическое подтверждение/отклонение брони выполняется асинхронно фоновым сервисом.
 
-| Метод | Путь                | Описание                      | Успех | Не найдено | Нет мест |
-| ----- | ------------------- | ----------------------------- | ----- | ---------- | -------- |
-| POST  | `/events/{id}/book` | Создать бронь для события     | 202   | 404        | 409      |
-| GET   | `/bookings/{id}`    | Получить текущий статус брони | 200   | 404        | —        |
+| Метод  | Путь                | Описание                        | Успех |
+| ------ | ------------------- | ------------------------------- | ----- |
+| POST   | `/events/{id}/book` | Создать бронь для события       | 202   |
+| GET    | `/bookings/{id}`    | Получить данные брони по ID     | 200   |
+| DELETE | `/bookings/{id}`    | Отменить бронь и вернуть место  | 204   |
+
+Все три маршрута требуют JWT. Отменить бронь может её владелец или администратор. Чужая отмена от обычного пользователя возвращает `403`, отсутствующая бронь — `404`. Повторная отмена возвращает `204`, место освобождается один раз.
 
 `POST /events/{id}/book`:
 
 - если события с `id` не существует - `404`;
+- если событие уже началось — `400`;
 - если у события не осталось свободных мест (`AvailableSeats == 0`) - `409 Conflict` (`NoAvailableSeatsException`);
+- если у пользователя уже 10 броней в статусах `Pending` или `Confirmed` — `409`;
 - иначе место резервируется и бронь создаётся сразу в статусе `Pending`;
 - в теле ответа - `BookingResponseDto` созданной брони;
 - в заголовке `Location` - ссылка на ресурс брони: `/bookings/{bookingId}`.
@@ -189,12 +202,15 @@ dotnet run --project EventsService.Api
 
 Репозиторий сохраняет списание места и создание брони одним `SaveChangesAsync`. Системный столбец PostgreSQL `xmin` служит токеном конкурентности события. Если другой запрос успел изменить событие, репозиторий заново читает число мест и повторяет попытку. Тот же токен защищает возврат мест в `EventSeatReleaser`, в том числе при работе нескольких экземпляров приложения.
 
+Проверка лимита и создание брони выполняются в транзакции с блокировкой строки пользователя. При отмене изменение статуса и возврат места сохраняются атомарно. Проверка предыдущего статуса при записи защищает отменённую бронь от фонового подтверждения.
+
 ### Модель Booking / BookingResponseDto
 
 | Поле        | Тип           | Обязательное                                |
 | ----------- | ------------- | ------------------------------------------- |
 | Id          | Guid          | генерируется сервером                       |
 | EventId     | Guid          | да - Id события, к которому относится бронь |
+| UserId      | Guid          | да - Id владельца из JWT                    |
 | Status      | BookingStatus | да, по умолчанию `Pending`                  |
 | CreatedAt   | DateTime      | да, проставляется при создании              |
 | ProcessedAt | DateTime?     | заполняется после фоновой обработки         |
@@ -234,48 +250,60 @@ dotnet run --project EventsService.Api
 ### Пример сценария использования
 
 ```bash
+# Зарегистрировать администратора и пользователя
+curl -fsS http://localhost:5000/auth/register --json '{"login":"demo-admin","password":"demo-admin-password","role":"Admin"}'
+curl -fsS http://localhost:5000/auth/register --json '{"login":"demo-user","password":"demo-user-password"}'
+ADMIN_TOKEN=$(curl -fsS http://localhost:5000/auth/login --json '{"login":"demo-admin","password":"demo-admin-password"}' | jq -r '.token')
+USER_TOKEN=$(curl -fsS http://localhost:5000/auth/login --json '{"login":"demo-user","password":"demo-user-password"}' | jq -r '.token')
+
 # 1. Создать событие на 1 место
 curl -X POST http://localhost:5000/events \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"title":"Конференция .NET","startAt":"2026-12-01T10:00:00Z","endAt":"2026-12-01T12:00:00Z","totalSeats":1}'
+  -d '{"title":"Конференция .NET","startAt":"2030-12-01T10:00:00Z","endAt":"2030-12-01T12:00:00Z","totalSeats":1}'
 # -> 201 Created, тело содержит "id" события, "totalSeats":1, "availableSeats":1
 
 # 2. Забронировать место на событии
-curl -i -X POST http://localhost:5000/events/{eventId}/book
+curl -i -X POST http://localhost:5000/events/{eventId}/book -H "Authorization: Bearer $USER_TOKEN"
 # -> 202 Accepted
 # -> Location: /bookings/{bookingId}
-# -> тело: {"id":"...","eventId":"...","status":0 (Pending),"createdAt":"...","processedAt":null}
+# -> тело содержит id, eventId, userId и status: 0 (Pending)
 
 # 3. Сразу проверить статус - бронь ещё не обработана
-curl http://localhost:5000/bookings/{bookingId}
+curl http://localhost:5000/bookings/{bookingId} -H "Authorization: Bearer $USER_TOKEN"
 # -> status: 0 (Pending), processedAt: null
 
 # 4. Повторная попытка забронировать то же событие - мест больше нет
-curl -i -X POST http://localhost:5000/events/{eventId}/book
+curl -i -X POST http://localhost:5000/events/{eventId}/book -H "Authorization: Bearer $USER_TOKEN"
 # -> 409 Conflict
 
 # 5. Подождать несколько секунд (фоновый сервис опрашивает раз в PollingInterval=10с + ProcessingDelay=2с имитация обработки)
 sleep 12
-curl http://localhost:5000/bookings/{bookingId}
+curl http://localhost:5000/bookings/{bookingId} -H "Authorization: Bearer $USER_TOKEN"
 # -> status: 1 (Confirmed) или 2 (Rejected), processedAt заполнен
 # если обработка отклонена из-за ошибки до смены статуса и событие существует - место возвращается
 # при удалении события его брони удаляются каскадно
+
+# 6. Отменить активную бронь и освободить место
+curl -i -X DELETE http://localhost:5000/bookings/{bookingId} -H "Authorization: Bearer $USER_TOKEN"
+# -> 204 No Content
 ```
 
 ### Пример сценария с овербукингом
 
-Показывает, что при параллельных запросах на событие с ограниченным числом мест успешных броней ровно столько же, сколько мест, а не больше:
+Выполните пример с переменными `ADMIN_TOKEN` и `USER_TOKEN` из предыдущего сценария. При параллельных запросах число успешных броней ограничено количеством мест.
 
 ```bash
 # 1. Создать событие на 3 места
 eventId=$(curl -s -X POST http://localhost:5000/events \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"title":"Конференция .NET","startAt":"2026-12-01T10:00:00Z","endAt":"2026-12-01T12:00:00Z","totalSeats":3}' \
+  -d '{"title":"Конференция .NET","startAt":"2030-12-01T10:00:00Z","endAt":"2030-12-01T12:00:00Z","totalSeats":3}' \
   | jq -r '.id')
 
 # 2. Отправить 10 конкурентных запросов на бронирование (параллельно, в фоне)
 for i in $(seq 1 10); do
-  curl -s -o /dev/null -w "%{http_code}\n" -X POST "http://localhost:5000/events/${eventId}/book" &
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST "http://localhost:5000/events/${eventId}/book" -H "Authorization: Bearer $USER_TOKEN" &
 done
 wait
 # -> в выводе ровно 3 строки "202" и 7 строк "409" (порядок непредсказуем из-за конкуренции)
@@ -291,7 +319,9 @@ curl -s http://localhost:5000/events/${eventId} | jq '.availableSeats'
 
 - `NotFoundException` (событие/бронь не найдены) - **404**
 - `ValidationException` (доменная/DTO-валидация, включая `TotalSeats <= 0`) - **400**
-- `NoAvailableSeatsException` (нет свободных мест у события) и `BookingStateException` (недопустимый переход статуса) - **409**
+- `EventAlreadyStartedException` (событие уже началось) — **400**
+- `ForbiddenException` (пользователь пытается отменить чужую бронь) — **403**
+- `NoAvailableSeatsException` (нет свободных мест), `ActiveBookingLimitExceededException` (лимит активных броней) и `BookingStateException` (недопустимый переход статуса) — **409**
 - Необработанное исключение - **500**
 
 **404 Not Found:**
@@ -388,6 +418,7 @@ dotnet test EventsService.IntegrationTests/EventsService.IntegrationTests.csproj
 - `MigrationTests` - применение миграций, перенос старых броней на технического владельца, повторный `Migrate()`, соответствие миграций модели, структура таблиц, индексы и внешние ключи;
 - `EventRepositoryTests` - все методы `EventRepository`: создание (в том числе дубликат Id), получение по Id, обновление существующего/несуществующего события, удаление (в том числе каскадное удаление броней), список событий: все варианты фильтров (`title` - регистр, подстрока, пустое значение, спецсимволы `%` и `_`; `from`/`to` - включительные границы; комбинации фильтров; пустой результат) и пагинация (страницы не пересекаются, последняя неполная страница, страница за пределами данных, `totalCount` с учётом фильтра, стабильный порядок);
 - `BookingRepositoryTests` - создание и получение брони, выборка `Pending`-броней, обновление статуса, параллельное бронирование до исчерпания мест, повтор при конкурентном возврате места и откат списания при ошибке вставки.
+- `BookingApiTests` — регистрация и вход, права на управление событиями, отмена владельцем и администратором, Swagger и лимит при параллельном бронировании разных событий.
 
 ## Стек
 

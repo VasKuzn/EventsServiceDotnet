@@ -10,6 +10,8 @@ namespace EventsService.Infrastructure.Security
 {
     public sealed class JwtTokenGenerator(IOptions<JwtOptions> jwtOptions) : IJwtTokenGenerator
     {
+        public const string RoleClaimType = "role";
+
         public string Generate(User user)
         {
             var options = jwtOptions.Value;
@@ -28,7 +30,7 @@ namespace EventsService.Infrastructure.Security
                 [
                     new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
                     new Claim(JwtRegisteredClaimNames.UniqueName, user.Login),
-                    new Claim("role", user.Role.ToString())
+                    new Claim(RoleClaimType, user.Role.ToString())
                 ],
                 notBefore: now,
                 expires: now.AddMinutes(options.LifetimeMinutes),
