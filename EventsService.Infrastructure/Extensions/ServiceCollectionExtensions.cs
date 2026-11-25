@@ -16,10 +16,16 @@ namespace EventsService.Infrastructure.Extensions
         {
             services.AddDbContext<AppDbContext>(options =>
                 options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+            services.AddInfrastructureAdapters();
+            services.AddHostedService<BookingProcessingBackgroundService>();
+            return services;
+        }
+
+        public static IServiceCollection AddInfrastructureAdapters(this IServiceCollection services)
+        {
             services.AddScoped<IEventRepository, EventRepository>();
             services.AddScoped<IBookingRepository, BookingRepository>();
             services.AddScoped<IEventSeatReleaser, EventSeatReleaser>();
-            services.AddHostedService<BookingProcessingBackgroundService>();
             return services;
         }
     }

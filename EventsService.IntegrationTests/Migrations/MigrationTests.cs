@@ -7,8 +7,6 @@ namespace EventsService.IntegrationTests.Migrations;
 
 public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
 {
-    private const string InitialMigrationId = "InitialCreate";
-
     private async Task<List<T>> QueryAsync<T>(string sql, Func<NpgsqlDataReader, T> map, params NpgsqlParameter[] parameters)
     {
         await using var connection = new NpgsqlConnection(Fixture.ConnectionString);
@@ -44,7 +42,7 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
     }
 
     [Fact]
-    public async Task Migrate_OnEmptyDatabase_AppliesInitialMigrationWithoutPendingOnes()
+    public async Task Migrate_OnEmptyDatabase_AppliesAllMigrations()
     {
         // Arrange
         await using var context = CreateContext();
@@ -54,8 +52,9 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
         var pending = (await context.Database.GetPendingMigrationsAsync()).ToList();
 
         // Assert
-        var migration = Assert.Single(applied);
-        Assert.EndsWith(InitialMigrationId, migration);
+        Assert.Collection(applied,
+            migration => Assert.EndsWith("InitialCreate", migration),
+            migration => Assert.EndsWith("UseEventRowVersion", migration));
         Assert.Empty(pending);
     }
 
@@ -64,12 +63,13 @@ public class MigrationTests(PostgresFixture fixture) : DatabaseTestBase(fixture)
     {
         // Arrange
         await using var context = CreateContext();
+        var applied = await context.Database.GetAppliedMigrationsAsync();
 
         // Act
         await context.Database.MigrateAsync();
 
         // Assert
-        Assert.Single(await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(applied, await context.Database.GetAppliedMigrationsAsync());
     }
 
     [Fact]

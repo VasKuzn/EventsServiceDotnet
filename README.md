@@ -52,7 +52,7 @@ export ConnectionStrings__DefaultConnection="Host=myhost;Port=5432;Database=Even
 $env:ConnectionStrings__DefaultConnection = "Host=myhost;Port=5432;Database=EventApi;Username=user;Password=secret"
 ```
 
-Схема БД создаётся миграциями EF Core (папка `EventsService.Infrastructure/Migrations`). При запуске приложения в `Program.cs` после `builder.Build()` вызывается `db.Database.Migrate()`: он создаёт базу данных, если её нет, и применяет все ещё не применённые миграции. Если база ранее была создана через `EnsureCreated()`, её нужно удалить (например, через pgAdmin), чтобы схема создавалась с нуля именно миграциями: иначе в базе останутся старые таблицы `Event` и `Booking` без истории миграций.
+Схема БД создаётся миграциями EF Core (папка `EventsService.Infrastructure/Migrations`). При запуске `app.Services.ApplyMigrations()` вызывает `Database.Migrate()` в Infrastructure, создаёт базу при необходимости и применяет ожидающие миграции. Если база ранее была создана через `EnsureCreated()`, её нужно удалить (например, через pgAdmin), чтобы схема создавалась с нуля именно миграциями: иначе в базе останутся старые таблицы `Event` и `Booking` без истории миграций.
 
 Начальная миграция `InitialCreate` создаёт схему:
 
@@ -63,7 +63,7 @@ $env:ConnectionStrings__DefaultConnection = "Host=myhost;Port=5432;Database=Even
 
 Между таблицами настроен внешний ключ `bookings.event_id → events.id` с каскадным удалением (при удалении события удаляются его брони) и индекс по `bookings.event_id`.
 
-Новая миграция после изменения сущностей (из папки `EventsService`):
+Новая миграция после изменения сущностей (из корня репозитория, где лежит `EventsService.slnx`):
 
 ```powershell
 dotnet ef migrations add <ИмяМиграции> --project EventsService.Infrastructure --startup-project EventsService.Api --output-dir Migrations
@@ -73,7 +73,7 @@ dotnet ef migrations add <ИмяМиграции> --project EventsService.Infras
 
 ## Запуск (в папке EventsService)
 
-Команды выполняются из папки `EventsService`:
+Команды выполняются из корня репозитория, где лежит `EventsService.slnx`:
 
 ```bash
 dotnet restore
@@ -169,19 +169,9 @@ dotnet run --project EventsService.Api
 - в теле ответа - `BookingResponseDto` созданной брони;
 - в заголовке `Location` - ссылка на ресурс брони: `/bookings/{bookingId}`.
 
-### Защита от овербукинга (`BookingService`)
+### Защита от овербукинга
 
-При параллельных запросах на одно и то же событие без синхронизации возможен overbooking: два запроса, каждый со своим `DbContext`, могут прочитать одно и то же значение `AvailableSeats` и оба его уменьшить. `BookingService.CreateBookingAsync` оборачивает весь критический участок (`GetEventAsync` → `TryReserveSeats` → `UpdateEventAsync` → `CreateBookingAsync`) в `SemaphoreSlim(1, 1)`, гарантируя, что проверка доступности мест и их резервирование выполняются как единая атомарная операция - конкурентные запросы обрабатываются строго по очереди, и ни один из них не увидит "устаревшее" значение `AvailableSeats`.
-
-Важная деталь про DI: `IBookingService`, репозитории и `AppDbContext` зарегистрированы как `Scoped` - у каждого HTTP-запроса свой экземпляр сервиса и свой `DbContext`. Поэтому семафор в `BookingService` объявлен `static`: экземпляр семафора, привязанный к scope, не защищал бы запросы друг от друга. Такая защита работает в пределах одного процесса приложения; при запуске нескольких экземпляров сервиса понадобится блокировка или оптимистичная конкуренция на уровне БД.
-
-### Примитивы синхронизации: какие и зачем
-
-| Примитив                     | Где                                 | Что защищает                                                                                                                              |
-| ---------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `static SemaphoreSlim(1, 1)` | `BookingService.CreateBookingAsync` | Атомарность проверки `AvailableSeats` и создания брони при параллельных `POST /events/{id}/book` на одно событие - защита от overbooking. |
-
-В `BookingProcessingBackgroundService` синхронизация не нужна: каждая бронь обрабатывается в своём scope со своим `DbContext`, а общих изменяемых объектов между задачами нет.
+Репозиторий сохраняет списание места и создание брони одним `SaveChangesAsync`. Системный столбец PostgreSQL `xmin` служит токеном конкурентности события. Если другой запрос успел изменить событие, репозиторий заново читает число мест и повторяет попытку. Тот же токен защищает возврат мест в `EventSeatReleaser`, в том числе при работе нескольких экземпляров приложения.
 
 ### Модель Booking / BookingResponseDto
 
@@ -275,7 +265,7 @@ wait
 
 # 3. Проверить итоговое количество мест
 curl -s http://localhost:5000/events/${eventId} | jq '.availableSeats'
-# -> 0 (ушли ровно 3 места, не меньше и не больше - семафор в BookingService не допустил overbooking)
+# -> 0 (зарезервировано ровно 3 места)
 ```
 
 ## Формат ответа при ошибках
@@ -284,7 +274,7 @@ curl -s http://localhost:5000/events/${eventId} | jq '.availableSeats'
 
 - `NotFoundException` (событие/бронь не найдены) - **404**
 - `ValidationException` (доменная/DTO-валидация, включая `TotalSeats <= 0`) - **400**
-- `NoAvailableSeatsException` (нет свободных мест у события) - **409**
+- `NoAvailableSeatsException` (нет свободных мест у события) и `BookingStateException` (недопустимый переход статуса) - **409**
 - Необработанное исключение - **500**
 
 **404 Not Found:**
@@ -338,19 +328,18 @@ curl -s http://localhost:5000/events/${eventId} | jq '.availableSeats'
 
 ## Тесты
 
-Юнит-тесты (xUnit) находятся в проекте `EventsService.Tests`. Для тестов PostgreSQL не нужен: в них используется **InMemory-провайдер EF Core** (`UseInMemoryDatabase`). DI-контейнер настраивается через `ServiceCollection` (`TestServiceProvider`): регистрируются `AppDbContext`, реальные репозитории и сервисы. Имя InMemory-базы - `Guid.NewGuid()`, вынесенный в переменную, поэтому все scope одного теста работают с общей базой, а разные тесты друг на друга не влияют. Для параллельных запросов в тестах на конкурентность создаётся отдельный scope.
+Юнит-тесты (xUnit) находятся в проекте `EventsService.Tests`. `TestServiceProvider` регистрирует `AppDbContext` с **InMemory-провайдером EF Core** и подключает общие регистрации адаптеров и сервисов. У каждого теста своя InMemory-база.
 
 - `InMemoryEventServiceTests` - покрывает `EventService`: успешные и неуспешные сценарии CRUD, фильтрацию, пагинацию и граничные случаи;
 - `InMemoryBookingServiceTests` - покрывает `BookingService`: создание брони для существующего/несуществующего/удалённого события, уникальность Id при нескольких бронях на одно событие, получение брони по Id (включая отражение смены статуса после `Confirm`/`Reject`) и получение по несуществующему Id;
-- `BookingSeatManagementTests` - покрывает логику мест и защиту от овербукинга поверх реальных `EventRepository`/`BookingRepository` и `AppDbContext`:
+- `BookingSeatManagementTests` - покрывает логику мест поверх реальных `EventRepository`/`BookingRepository` и `AppDbContext`:
   - уменьшение `AvailableSeats` после успешной брони, создание броней до исчерпания лимита с уникальными Id, `NoAvailableSeatsException` после исчерпания мест, `NotFoundException` для несуществующего события;
-  - смена статуса брони через `Confirm()`/`Reject()` (статус + `ProcessedAt`), восстановление `AvailableSeats` и возможность новой брони после `Reject()` + `ReleaseSeats()`;
-  - конкурентность: 20 параллельных запросов (`Task.Run` + `Task.WhenAll`, реальный параллелизм на пуле потоков) на событие с 5 местами - ровно 5 успехов и 15 `NoAvailableSeatsException`, `AvailableSeats == 0`; 10 параллельных запросов на событие с 10 местами - все 10 броней получают уникальные Id.
+  - смена статуса брони через `Confirm()`/`Reject()` (статус + `ProcessedAt`), запрет повторной обработки, восстановление `AvailableSeats` и возможность новой брони после `Reject()` + `ReleaseSeats()`.
 
 - `BookingProcessingServiceTests` - подтверждение брони, пропуск отсутствующей/обработанной брони, отклонение при отсутствии события, возврат места при ошибке обработки, отмена и ошибка сохранения статуса. Зависимости заменяются через Moq;
 - `EventSeatReleaserTests` - возврат места, повторная загрузка события после конфликта EF Core и ограничение числа попыток. Репозитории заменяются через Moq, реальные БД и Docker не нужны.
 
-Запуск юнит-тестов (из папки `EventsService`):
+Запуск юнит-тестов (из корня репозитория):
 
 ```bash
 dotnet test EventsService.Tests/EventsService.Tests.csproj
@@ -379,9 +368,9 @@ dotnet test EventsService.IntegrationTests/EventsService.IntegrationTests.csproj
 
 Что покрыто:
 
-- `MigrationTests` - применение миграции `InitialCreate` (нет неприменённых миграций, повторный `Migrate()` безопасен), отсутствие расхождений между моделью и миграциями, наличие таблиц `events` и `bookings`, типы/длины/nullable колонок, первичные ключи, внешний ключ `bookings.event_id → events.id` с `ON DELETE CASCADE`, индекс по `event_id`, нарушение FK при вставке брони с несуществующим событием;
+- `MigrationTests` - применение миграций `InitialCreate` и `UseEventRowVersion`, повторный `Migrate()`, соответствие миграций модели, структура таблиц, ключи, индекс по `event_id` и проверка внешнего ключа;
 - `EventRepositoryTests` - все методы `EventRepository`: создание (в том числе дубликат Id), получение по Id, обновление существующего/несуществующего события, удаление (в том числе каскадное удаление броней), список событий: все варианты фильтров (`title` - регистр, подстрока, пустое значение, спецсимволы `%` и `_`; `from`/`to` - включительные границы; комбинации фильтров; пустой результат) и пагинация (страницы не пересекаются, последняя неполная страница, страница за пределами данных, `totalCount` с учётом фильтра, стабильный порядок);
-- `BookingRepositoryTests` - все методы `BookingRepository`: создание (в том числе для несуществующего события), получение по Id, выборка идентификаторов `Pending`-броней, обновление статуса (`Confirmed`/`Rejected`) с `ProcessedAt`.
+- `BookingRepositoryTests` - создание и получение брони, выборка `Pending`-броней, обновление статуса, параллельное бронирование до исчерпания мест, повтор при конкурентном возврате места и откат списания при ошибке вставки.
 
 ## Стек
 
