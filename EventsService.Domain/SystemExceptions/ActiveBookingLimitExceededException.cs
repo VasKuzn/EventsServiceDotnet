@@ -1,6 +1,6 @@
 namespace EventsService.Domain.SystemExceptions
 {
-    public sealed class ActiveBookingLimitExceededException() : Exception("The active booking limit has been reached.")
+    public sealed class ActiveBookingLimitExceededException(int limit) : Exception($"The active booking limit of {limit} has been reached.")
     {
     }
 }

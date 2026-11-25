@@ -49,7 +49,7 @@ namespace EventsService.Application.Services
                 throw new EventAlreadyStartedException();
 
             if (activeBookingCount >= ActiveBookingLimit)
-                throw new ActiveBookingLimitExceededException();
+                throw new ActiveBookingLimitExceededException(ActiveBookingLimit);
         }
     }
 }

@@ -29,8 +29,14 @@ public sealed class BookingApiTests(PostgresFixture fixture) : DatabaseTestBase(
         Assert.Single(registration, response => response.StatusCode == HttpStatusCode.BadRequest);
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/auth/register",
             new { login = "invalid-role", password = TestPassword, role = "editor" })).StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/auth/login",
-            new { login = "reader", password = "wrong" })).StatusCode);
+        var wrongPassword = await client.PostAsJsonAsync("/auth/login", new { login = "reader", password = "wrong" });
+        var unknownLogin = await client.PostAsJsonAsync("/auth/login", new { login = "unknown", password = "wrong" });
+        Assert.Equal(HttpStatusCode.BadRequest, wrongPassword.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, unknownLogin.StatusCode);
+        var wrongPasswordDetail = (await wrongPassword.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetString();
+        var unknownLoginDetail = (await unknownLogin.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetString();
+        Assert.Equal("Invalid login or password.", wrongPasswordDetail);
+        Assert.Equal(wrongPasswordDetail, unknownLoginDetail);
 
         var login = await client.PostAsJsonAsync("/auth/login", credentials);
         Assert.Equal(HttpStatusCode.OK, login.StatusCode);
@@ -131,7 +137,8 @@ public sealed class BookingApiTests(PostgresFixture fixture) : DatabaseTestBase(
         Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsync($"/events/{Guid.NewGuid()}/book", null)).StatusCode);
         var responses = await Task.WhenAll(future.Take(11).Select(item => client.PostAsync($"/events/{item.Id}/book", null)));
         Assert.Equal(10, responses.Count(response => response.StatusCode == HttpStatusCode.Accepted));
-        Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Conflict);
+        var conflict = Assert.Single(responses, response => response.StatusCode == HttpStatusCode.Conflict);
+        Assert.Contains("10", (await conflict.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("detail").GetString());
         Assert.Equal(HttpStatusCode.Accepted, (await anotherUser.PostAsync($"/events/{future[^1].Id}/book", null)).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync(responses.First(response => response.IsSuccessStatusCode).Headers.Location)).StatusCode);
         Assert.Equal(HttpStatusCode.Accepted, (await client.PostAsync($"/events/{future[^1].Id}/book", null)).StatusCode);
@@ -162,7 +169,7 @@ public sealed class BookingApiTests(PostgresFixture fixture) : DatabaseTestBase(
 
     private static object NewEvent(int totalSeats = 1)
     {
-        var startAt = DateTime.UtcNow.AddDays(1);
+        var startAt = DateTimeOffset.UtcNow.AddDays(1).ToOffset(TimeSpan.FromHours(5));
         return new { title = "API event", startAt, endAt = startAt.AddHours(1), totalSeats };
     }
 }
