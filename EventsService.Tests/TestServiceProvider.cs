@@ -1,8 +1,6 @@
-using EventsService.Application.Interfaces.Bookings;
-using EventsService.Application.Interfaces.Events;
-using EventsService.Application.Services;
+using EventsService.Application.Extensions;
 using EventsService.Infrastructure.DataAccess;
-using EventsService.Infrastructure.Repositories;
+using EventsService.Infrastructure.Extensions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -21,11 +19,10 @@ public sealed class TestServiceProvider : IDisposable
         var dbName = Guid.NewGuid().ToString();
 
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(dbName));
-        services.AddScoped<IEventRepository, EventRepository>();
-        services.AddScoped<IBookingRepository, BookingRepository>();
-        services.AddScoped<IEventService, EventService>();
-        services.AddScoped<IBookingService, BookingService>();
+        services.AddInfrastructureAdapters();
+        services.AddApplicationServices();
 
         _serviceProvider = services.BuildServiceProvider(new ServiceProviderOptions
         {

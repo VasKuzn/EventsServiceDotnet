@@ -1,6 +1,7 @@
 using EventsService.Application.Interfaces.Bookings;
 using EventsService.Domain.Enums;
 using EventsService.Domain.Models;
+using EventsService.Domain.SystemExceptions;
 using EventsService.Infrastructure.DataAccess;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,6 +16,39 @@ namespace EventsService.Infrastructure.Repositories
             await dbContext.SaveChangesAsync(ct);
 
             return bookingEntity;
+        }
+
+        public async Task<Booking> CreateBookingWithReservedSeatAsync(Guid eventId, CancellationToken ct)
+        {
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
+                var bookedEvent = await dbContext.Events.FindAsync([eventId], ct)
+                    ?? throw new NotFoundException($"Event with ID {eventId} not found.");
+
+                if (!bookedEvent.TryReserveSeats())
+                {
+                    throw new NoAvailableSeatsException();
+                }
+
+                var booking = dbContext.Bookings.Add(Booking.Create(eventId));
+                try
+                {
+                    await dbContext.SaveChangesAsync(ct);
+                    return booking.Entity;
+                }
+                catch (DbUpdateConcurrencyException ex) when (ex.Entries.Any(entry => entry.Entity == bookedEvent))
+                {
+                }
+                finally
+                {
+                    if (booking.State == EntityState.Added)
+                    {
+                        booking.State = EntityState.Detached;
+                        dbContext.Entry(bookedEvent).State = EntityState.Detached;
+                    }
+                }
+            }
         }
 
         public async Task<Booking?> GetBookingAsync(Guid id, CancellationToken ct)

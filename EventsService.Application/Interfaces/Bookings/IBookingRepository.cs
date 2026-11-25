@@ -7,6 +7,7 @@ namespace EventsService.Application.Interfaces.Bookings
         public Task<Booking?> GetBookingAsync(Guid id, CancellationToken ct);
         public Task<IReadOnlyList<Guid>> GetPendingBookingIdsAsync(CancellationToken ct);
         public Task<Booking> CreateBookingAsync(Booking bookingEntity, CancellationToken ct);
+        public Task<Booking> CreateBookingWithReservedSeatAsync(Guid eventId, CancellationToken ct);
         public Task UpdateBookingAsync(Booking bookingEntity, CancellationToken ct);
     }
 }

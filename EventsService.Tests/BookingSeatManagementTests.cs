@@ -146,6 +146,16 @@ public class BookingSeatManagementTests : IDisposable
     }
 
     [Fact]
+    public void ConfirmAndReject_ProcessedBooking_ThrowBookingStateException()
+    {
+        var booking = Booking.Create(Guid.NewGuid());
+        booking.Confirm(DateTime.UtcNow);
+
+        Assert.Throws<BookingStateException>(() => booking.Confirm(DateTime.UtcNow));
+        Assert.Throws<BookingStateException>(() => booking.Reject(DateTime.UtcNow));
+    }
+
+    [Fact]
     public async Task RejectBooking_ReleaseSeats_RestoresAvailableSeatsCount()
     {
         var testEvent = await SeedEventAsync(totalSeats: 3);
@@ -177,59 +187,6 @@ public class BookingSeatManagementTests : IDisposable
         var secondBookingDto = await BookAsync(testEvent.Id);
 
         Assert.NotEqual(firstBookingDto.Id, secondBookingDto.Id);
-        Assert.Equal(0, await GetAvailableSeatsAsync(testEvent.Id));
-    }
-
-    // ---------- Конкурентность ----------
-
-    [Fact]
-    public async Task CreateBookingAsync_ConcurrentRequestsExceedingCapacity_OnlyCapacitySucceeds()
-    {
-        var testEvent = await SeedEventAsync(totalSeats: 5);
-
-        // Отдельный scope (а значит и отдельный DbContext) на каждый параллельный запрос.
-        var tasks = Enumerable.Range(0, 20)
-            .Select(_ => Task.Run(async () =>
-            {
-                using var scope = _serviceProvider.CreateScope();
-                var bookingService = scope.ServiceProvider.GetRequiredService<IBookingService>();
-
-                try
-                {
-                    await bookingService.CreateBookingAsync(testEvent.Id, CancellationToken.None);
-                    return true;
-                }
-                catch (NoAvailableSeatsException)
-                {
-                    return false;
-                }
-            }))
-            .ToArray();
-
-        var results = await Task.WhenAll(tasks);
-
-        Assert.Equal(5, results.Count(success => success));
-        Assert.Equal(15, results.Count(success => !success));
-        Assert.Equal(0, await GetAvailableSeatsAsync(testEvent.Id));
-    }
-
-    [Fact]
-    public async Task CreateBookingAsync_ConcurrentRequestsWithinCapacity_AllBookingsHaveUniqueIds()
-    {
-        var testEvent = await SeedEventAsync(totalSeats: 10);
-
-        var tasks = Enumerable.Range(0, 10)
-            .Select(_ => Task.Run(async () =>
-            {
-                using var scope = _serviceProvider.CreateScope();
-                var bookingService = scope.ServiceProvider.GetRequiredService<IBookingService>();
-                return await bookingService.CreateBookingAsync(testEvent.Id, CancellationToken.None);
-            }))
-            .ToArray();
-
-        var results = await Task.WhenAll(tasks);
-
-        Assert.Equal(10, results.Select(r => r.Id).Distinct().Count());
         Assert.Equal(0, await GetAvailableSeatsAsync(testEvent.Id));
     }
 }

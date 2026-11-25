@@ -1,5 +1,7 @@
+using EventsService.Application.Services;
 using EventsService.Domain.Enums;
 using EventsService.Domain.Models;
+using EventsService.Domain.SystemExceptions;
 using EventsService.Infrastructure.DataAccess;
 using EventsService.Infrastructure.Repositories;
 using EventsService.IntegrationTests.Infrastructure;
@@ -58,6 +60,74 @@ public class BookingRepositoryTests(PostgresFixture fixture) : DatabaseTestBase(
         await Assert.ThrowsAsync<DbUpdateException>(act);
         await using var readContext = CreateContext();
         Assert.Empty(await readContext.Bookings.ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(5, 20)]
+    [InlineData(10, 10)]
+    public async Task CreateBookingAsync_ConcurrentRequests_ReserveOnlyAvailableSeats(int seats, int requests)
+    {
+        var eventEntity = TestData.CreateEvent(totalSeats: seats);
+        await SeedAsync(eventEntity);
+
+        var results = await Task.WhenAll(Enumerable.Range(0, requests).Select(async _ =>
+        {
+            await using var context = CreateContext();
+            try
+            {
+                var service = new BookingService(new BookingRepository(context));
+                return (Guid?)(await service.CreateBookingAsync(eventEntity.Id, Ct)).Id;
+            }
+            catch (NoAvailableSeatsException)
+            {
+                return null;
+            }
+        }));
+
+        await using var readContext = CreateContext();
+        Assert.Equal(seats, results.OfType<Guid>().Distinct().Count());
+        Assert.Equal(requests - seats, results.Count(id => id is null));
+        Assert.Equal(seats, await readContext.Bookings.CountAsync());
+        Assert.Equal(0, (await readContext.Events.SingleAsync()).AvailableSeats);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_SeatReleasedAfterRead_RetriesWithCurrentSeatCount()
+    {
+        var eventEntity = TestData.CreateEvent(totalSeats: 3);
+        Assert.True(eventEntity.TryReserveSeats());
+        await SeedAsync(eventEntity);
+
+        await using var bookingContext = CreateContext();
+        await bookingContext.Events.SingleAsync();
+        await using var releaseContext = CreateContext();
+        var eventRepository = new EventRepository(releaseContext);
+        var releasedEvent = (await eventRepository.GetEventAsync(eventEntity.Id, Ct))!;
+        releasedEvent.ReleaseSeats();
+        await eventRepository.UpdateEventAsync(releasedEvent, Ct);
+
+        var service = new BookingService(new BookingRepository(bookingContext));
+        await service.CreateBookingAsync(eventEntity.Id, Ct);
+
+        await using var readContext = CreateContext();
+        Assert.Equal(2, (await readContext.Events.SingleAsync()).AvailableSeats);
+        Assert.Equal(1, await readContext.Bookings.CountAsync());
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_InsertFails_DoesNotReserveSeat()
+    {
+        var eventEntity = TestData.CreateEvent(totalSeats: 1);
+        await SeedAsync(eventEntity);
+        await using var context = CreateContext();
+        await context.Database.ExecuteSqlRawAsync("ALTER TABLE bookings ADD CONSTRAINT reject_test_insert CHECK (false)");
+
+        var service = new BookingService(new BookingRepository(context));
+        await Assert.ThrowsAsync<DbUpdateException>(() => service.CreateBookingAsync(eventEntity.Id, Ct));
+
+        await using var readContext = CreateContext();
+        Assert.Equal(1, (await readContext.Events.SingleAsync()).AvailableSeats);
+        Assert.Equal(0, await readContext.Bookings.CountAsync());
     }
 
     // ---------- GetBookingAsync ----------

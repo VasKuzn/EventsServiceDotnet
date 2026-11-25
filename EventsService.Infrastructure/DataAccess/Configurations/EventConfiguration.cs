@@ -18,6 +18,7 @@ namespace EventsService.Infrastructure.DataAccess.Configurations
             builder.Property(x => x.EndAt).HasColumnName("end_at").IsRequired();
             builder.Property(x => x.TotalSeats).HasColumnName("total_seats").IsRequired();
             builder.Property(x => x.AvailableSeats).HasColumnName("available_seats").IsRequired();
+            builder.Property<uint>("xmin").IsRowVersion();
 
             builder.HasMany(e => e.Bookings).WithOne(x => x.Event).HasForeignKey(x => x.EventId).OnDelete(DeleteBehavior.Cascade);
 
